@@ -1,0 +1,66 @@
+# Knowledge library configuration. Anything not set here uses the built-in default
+# (src/knowlib/config.py). A session folder's session.yaml can override any section.
+
+# Block every API call (also settable per session). Confidential material stays on the Mac.
+local_only: false
+
+transcription:
+  backend: mlx-whisper                 # mlx-whisper | whisper-cpp | faster-whisper | subtitles | mock
+  model: mlx-community/whisper-large-v3-turbo
+  language: el                         # default when a session does not say: el | en | mixed
+  mixed_language_as: el                # Whisper takes one language; put English terms in the glossary
+  word_timestamps: true
+  condition_on_previous_text: false    # true can improve consistency but risks repetition loops
+
+alignment:
+  window_s: 30
+  step_s: 30
+  search_s: 8
+  min_confidence: 0.2
+  jump_threshold_s: 0.5
+  mux_better_audio: false              # write archive/<id>.mp4 with the better audio
+
+video:
+  fps: 1                               # raise for fast screen recordings or live coding
+  extract_resolution: native           # original video resolution, never downscaled
+  frame_format: jpg                    # jpg (quality 2) | png (lossless, ~5x larger while processing)
+  dedup: phash                         # sensitive threshold, SSIM backup check
+  phash_threshold: 6
+  ssim_check: true
+  ssim_threshold: 0.985
+  min_group_s: 2
+  frame_store: native                  # kept frames stored at source resolution
+  selection_input: native              # VLM judges native frames up to vlm_max_native_px
+  vlm_max_native_px: 2048              # larger (e.g. 4K) frames: text read from native-resolution tiles
+  ocr_input: native                    # cross-check OCR reads the full native frame
+  model_view_max_px: 1568              # copy the frontier model reads first (API limit)
+  keep_lowres_archive: true
+
+frame_selection:
+  backend: mlx-vlm                     # mlx-vlm | openai | ollama | api | mock
+  base_url: http://localhost:8080/v1   # backend: openai (llama-server, LM Studio, vLLM)
+  model: mlx-community/Qwen3-VL-8B-Instruct-4bit
+  ollama_model: qwen3-vl:8b
+  api_model: anthropic/claude-sonnet-4-5   # LiteLLM model string, used only with backend: api
+  caption_language: English
+
+ocr_crosscheck:
+  backends: [apple-vision]             # add tesseract as a third opinion: [apple-vision, tesseract]
+  languages: [el-GR, en-US]
+  tesseract_langs: ell+eng
+  similarity_threshold: 0.75
+
+pdf:
+  backend: docling                     # docling | marker | pymupdf
+  fallbacks: [pymupdf]
+  scan_backend: tesseract              # tesseract | vision_llm | none
+  render_figure_pages: true
+
+office:
+  backend: docling                     # docling | pandoc
+  fallbacks: [pandoc]
+  render_slides: true                  # needs LibreOffice for slide images
+
+web:
+  backend: trafilatura
+  fallbacks: []                        # [jina] sends the URL to a third-party reader

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "knowlib"
+version = "0.1.0"
+description = "Turns a folder of documents, web pages, audio and video into a Markdown knowledge library for agents"
+requires-python = ">=3.11"
+dependencies = [
+  "pyyaml>=6",
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pillow>=10",
+  "imagehash>=4.3",
+  "scikit-image>=0.22",
+  "pymupdf>=1.24",
+  "trafilatura>=1.12",
+]
+
+[project.optional-dependencies]
+# Apple Silicon defaults: local Whisper and vision model on the GPU, Apple Vision OCR
+mac = ["mlx-whisper>=0.4.3", "mlx-vlm>=0.3.5", "ocrmac>=1.0", "torchvision"]
+docs = ["docling>=2.0", "python-pptx>=1.0", "pymupdf4llm>=0.0.17"]
+api = ["litellm>=1.50"]
+linux = ["faster-whisper>=1.0"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+knowlib = "knowlib.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+knowlib = ["templates/*", "templates/.*"]

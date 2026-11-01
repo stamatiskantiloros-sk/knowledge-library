@@ -1,0 +1,282 @@
+"""knowlib command line.
+
+  knowlib init [DIR]                 create a library (folders, config.yaml, CLAUDE.md, index, glossary)
+  knowlib doctor [-L DIR]            which tools/models are installed for the configured backends
+  knowlib process [-L DIR]           process inbox: ingest new or changed material
+  knowlib status [-L DIR]            counts, failures, sources waiting for synthesis
+  knowlib handbook --output DIR      one book per lecture, from --input or the inbox
+  knowlib qa [-L DIR]                every flag across sources, for the QA pass
+  knowlib reprocess --where K=V      mark matching sources stale and re-ingest them
+  knowlib pending [-L DIR]           source ids not yet synthesized into notes
+  knowlib mark-synthesized ID...     record that sources were synthesized
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import logging
+import platform
+import shutil
+import subprocess
+import sys
+import urllib.request
+from importlib import resources
+from pathlib import Path
+
+from .config import load_config
+
+
+def _lib(args) -> Path:
+    return Path(args.library).expanduser().resolve()
+
+
+def cmd_init(args) -> int:
+    root = Path(args.dir).expanduser().resolve()
+    for d in ("inbox", "sources", "notes"):
+        (root / d).mkdir(parents=True, exist_ok=True)
+    tpl = resources.files("knowlib") / "templates"
+    for name in ("config.yaml", "CLAUDE.md", "index.md", "glossary.md", "gitignore"):
+        dest = root / (".gitignore" if name == "gitignore" else name)
+        if not dest.exists():
+            dest.write_text((tpl / name).read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"created {dest.relative_to(root)}")
+    print(f"library ready at {root}\nnext: drop material into {root / 'inbox'} and run `knowlib process -L {root}`")
+    return 0
+
+
+def _has(mod: str) -> bool:
+    return importlib.util.find_spec(mod) is not None
+
+
+def cmd_doctor(args) -> int:
+    root = _lib(args)
+    cfg = load_config(root)
+    ok = lambda b: "ok " if b else "-- "  # noqa: E731
+    mac = sys.platform == "darwin"
+    arm = platform.machine() == "arm64"
+    print(f"platform: {platform.system()} {platform.machine()}  python {platform.python_version()}")
+    if not (mac and arm):
+        print("  note: the default backends (mlx-whisper, mlx-vlm, Apple Vision) need an Apple Silicon Mac")
+    print("\ntools")
+    for t in ("ffmpeg", "ffprobe", "pandoc", "tesseract", "soffice", "whisper-cli"):
+        p = shutil.which(t) or (t == "soffice" and Path("/Applications/LibreOffice.app/Contents/MacOS/soffice").exists())
+        print(f"  {ok(p)}{t}")
+    if shutil.which("tesseract"):
+        langs = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True).stdout.split()
+        print(f"  {ok('ell' in langs)}tesseract Greek model (ell)" + ("" if "ell" in langs else "  -> brew install tesseract-lang"))
+    print("\npython packages")
+    for m, why in [("mlx_whisper", "transcription: mlx-whisper"), ("mlx_vlm", "frame selection: mlx-vlm"),
+                   ("ocrmac", "OCR cross-check: apple-vision"), ("docling", "PDF/Office: docling"),
+                   ("fitz", "PDF renders: pymupdf"), ("trafilatura", "web pages"), ("pptx", "slides: python-pptx"),
+                   ("litellm", "API models (optional)"), ("faster_whisper", "transcription: faster-whisper (optional)")]:
+        print(f"  {ok(_has(m))}{m:16s} {why}")
+    if mac and _has("Vision"):
+        try:
+            import Vision
+            req = Vision.VNRecognizeTextRequest.alloc().init()
+            req.setRecognitionLevel_(0)
+            langs, _ = req.supportedRecognitionLanguagesAndReturnError_(None)
+            el = any(str(l).startswith("el") for l in langs)
+            print(f"  {ok(el)}Apple Vision Greek support" + ("" if el else
+                  "  -> Greek cross-check falls back to Tesseract: add tesseract to ocr_crosscheck.backends"))
+        except Exception as e:  # noqa: BLE001
+            print(f"  -- Apple Vision language query failed: {e}")
+    fs = cfg["frame_selection"]
+    if fs["backend"] == "ollama":
+        try:
+            urllib.request.urlopen(fs["ollama_url"] + "/api/tags", timeout=3)
+            print("  ok ollama server reachable")
+        except Exception:
+            print("  -- ollama server not reachable (ollama serve)")
+    print("\nconfigured backends")
+    for sec, key in [("transcription", "backend"), ("frame_selection", "backend"), ("pdf", "backend"),
+                     ("office", "backend"), ("web", "backend")]:
+        print(f"  {sec:16s} {cfg[sec][key]}  {cfg[sec].get('model', '') or ''}")
+    print(f"  ocr_crosscheck   {', '.join(cfg['ocr_crosscheck']['backends'])}")
+    print(f"  local_only       {cfg['local_only']}")
+    return 0
+
+
+def parse_sets(pairs: list[str]) -> dict:
+    """--set transcription.prefer_subtitles=false  ->  nested override dict (values parsed as YAML)."""
+    import yaml
+    out: dict = {}
+    for pair in pairs or []:
+        path, _, raw = pair.partition("=")
+        node = out
+        parts = path.strip().split(".")
+        for p in parts[:-1]:
+            node = node.setdefault(p, {})
+        node[parts[-1]] = yaml.safe_load(raw)
+    return out
+
+
+def cmd_process(args) -> int:
+    from .config import deep_merge
+    from .runner import process
+    overrides = deep_merge(parse_sets(args.set), {"local_only": True} if args.local_only else {})
+    if args.input:
+        overrides = deep_merge(overrides, {"library": {"inbox": str(Path(args.input).expanduser().resolve())}})
+    if args.layout:
+        overrides = deep_merge(overrides, {"library": {"layout": args.layout}})
+    rep = process(_lib(args), force=args.force, only=args.only, dry_run=args.dry_run, overrides=overrides,
+                  limit=args.limit)
+    print(json.dumps({k: rep[k] for k in ("new", "updated", "unchanged", "failed", "unsupported", "renamed")},
+                     indent=2, ensure_ascii=False))
+    if rep["flags"]:
+        print(f"\n{sum(len(v) for v in rep['flags'].values())} flags on {len(rep['flags'])} sources - run `knowlib qa`")
+    if rep["pending_synthesis"]:
+        print(f"{len(rep['pending_synthesis'])} sources waiting for synthesis")
+    return 1 if rep["failed"] else 0
+
+
+def cmd_transcribe(args) -> int:
+    """Transcribe one file with the configured backend: a quick check of Whisper speed and quality."""
+    import tempfile
+    import time
+    from .config import deep_merge
+    from .media.transcribe import transcribe
+    cfg = deep_merge(load_config(_lib(args)), parse_sets(args.set))
+    cfg["transcription"]["prefer_subtitles"] = False
+    src = Path(args.file).expanduser()
+    with tempfile.TemporaryDirectory() as td:
+        t0 = time.time()
+        segs, prov, flags = transcribe(src, Path(td), cfg, language=args.language or cfg["transcription"]["language"],
+                                       glossary=args.glossary.split(",") if args.glossary else [])
+        secs = time.time() - t0
+    dur = segs[-1]["end"] if segs else 0
+    out = Path(args.output) if args.output else src.with_suffix(".knowlib-transcript.md")
+    lines = [f"# Transcript test: {src.name}", "", f"- backend: {prov}", f"- audio: {dur:.0f}s, took {secs:.0f}s "
+             f"({dur / max(secs, 1e-6):.1f}x real time)", *[f"- flag: {f}" for f in flags], ""]
+    lines += [f"[{int(s['start']) // 60:02d}:{int(s['start']) % 60:02d}] {s['text']}" for s in segs]
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"{len(segs)} segments, {dur:.0f}s of audio in {secs:.0f}s -> {out}")
+    return 0
+
+
+def cmd_status(args) -> int:
+    from .manifest import Manifest
+    m = Manifest(_lib(args) / "manifest.json")
+    by = {}
+    for e in m.entries.values():
+        by[e.get("status")] = by.get(e.get("status"), 0) + 1
+    print(json.dumps({"entries": len(m.entries), "by_status": by,
+                      "pending_synthesis": len(m.pending_synthesis()),
+                      "failed": [k for k, e in m.entries.items() if e.get("status") == "failed"]}, indent=2))
+    from . import progress
+    run = progress.read(_lib(args) / ".work")
+    if run:
+        print(("running: " if run.get("running") else "last run finished: ") + progress.summary(run))
+        if run.get("running") and run.get("item"):
+            print(f"current: {run['item']}")
+    return 0
+
+
+def cmd_qa(args) -> int:
+    from .manifest import Manifest
+    m = Manifest(_lib(args) / "manifest.json")
+    out = {e["source_id"]: e["flags"] for _, e in m.done() if e.get("flags")}
+    out.update({k: [e.get("error", "")[-500:]] for k, e in m.entries.items() if e.get("status") == "failed"})
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_reprocess(args) -> int:
+    from .manifest import Manifest
+    from .runner import process
+    root = _lib(args)
+    m = Manifest(root / "manifest.json")
+    where = dict(w.split("=", 1) for w in args.where)
+    keys = m.match(where) if where else []
+    if args.ids:
+        keys += [k for k, e in m.entries.items() if e.get("source_id") in args.ids and k not in keys]
+    print(f"{len(keys)} sources match: " + ", ".join(m.entries[k].get("source_id", k) for k in keys))
+    if not keys or args.dry_run:
+        return 0
+    m.mark_stale(keys)
+    # rerun the stages under the new config; caches keyed by config fingerprint are invalidated
+    rep = process(root, only=keys, force=True)
+    if rep["failed"]:
+        print(json.dumps(rep["failed"], indent=2))
+    return 0
+
+
+def cmd_handbook(args) -> int:
+    from .handbook import finish, make, prepare
+    output = Path(args.output).expanduser()
+    if args.finish:
+        print(json.dumps(finish(output), indent=2, ensure_ascii=False))
+        return 0
+    results = (prepare if args.prepare else make)(_lib(args), output, only=args.only,
+                                                  input_dir=Path(args.input).expanduser().resolve() if args.input else None)
+    print(json.dumps(results, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_pending(args) -> int:
+    from .manifest import Manifest
+    print("\n".join(Manifest(_lib(args) / "manifest.json").pending_synthesis()))
+    return 0
+
+
+def cmd_mark(args) -> int:
+    from .manifest import Manifest
+    n = Manifest(_lib(args) / "manifest.json").mark_synthesized(args.ids)
+    print(f"marked {n} sources as synthesized")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog="knowlib", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("-v", "--verbose", action="store_true")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def lib(sp):
+        sp.add_argument("-L", "--library", default=".", help="library root (default: current folder)")
+        return sp
+
+    s = sub.add_parser("init"); s.add_argument("dir", nargs="?", default="."); s.set_defaults(fn=cmd_init)
+    lib(sub.add_parser("doctor")).set_defaults(fn=cmd_doctor)
+    s = lib(sub.add_parser("process"))
+    s.add_argument("--input", help="folder to ingest instead of the inbox")
+    s.add_argument("--layout", help='links in organized/, e.g. "{course}/{date}/{name}"; also {folder}')
+    s.add_argument("--force", action="store_true", help="re-ingest even if unchanged")
+    s.add_argument("--only", action="append", help="only inputs whose inbox path contains this text (repeatable)")
+    s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--local-only", action="store_true", help="block all API calls for this run")
+    s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="override a config value for this run, e.g. --set video.fps=2")
+    s.add_argument("--limit", type=int, help="process at most N inputs (for test runs)")
+    s.set_defaults(fn=cmd_process)
+    s = lib(sub.add_parser("transcribe", help="transcribe one file to test the Whisper setup"))
+    s.add_argument("file")
+    s.add_argument("--language")
+    s.add_argument("--glossary", help="comma-separated terms")
+    s.add_argument("-o", "--output")
+    s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    s.set_defaults(fn=cmd_transcribe)
+    s = lib(sub.add_parser("handbook", help="write one handbook per lecture into --output"))
+    s.add_argument("--output", required=True, help="target folder")
+    s.add_argument("--prepare", action="store_true", help="write a brief per lecture for an agent to write from")
+    s.add_argument("--finish", action="store_true", help="check the agent's draft.md files and export them")
+    s.add_argument("--input", help="folder of lectures and course materials (default: the inbox)")
+    s.add_argument("--only", action="append", help="only lectures whose path contains this text")
+    s.set_defaults(fn=cmd_handbook)
+    lib(sub.add_parser("status")).set_defaults(fn=cmd_status)
+    lib(sub.add_parser("qa")).set_defaults(fn=cmd_qa)
+    s = lib(sub.add_parser("reprocess"))
+    s.add_argument("--where", action="append", default=[], help="provenance filter, e.g. transcription.model=small")
+    s.add_argument("--ids", nargs="*", default=[])
+    s.add_argument("--dry-run", action="store_true")
+    s.set_defaults(fn=cmd_reprocess)
+    lib(sub.add_parser("pending")).set_defaults(fn=cmd_pending)
+    s = lib(sub.add_parser("mark-synthesized")); s.add_argument("ids", nargs="+"); s.set_defaults(fn=cmd_mark)
+
+    args = p.parse_args(argv)
+    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(message)s")
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

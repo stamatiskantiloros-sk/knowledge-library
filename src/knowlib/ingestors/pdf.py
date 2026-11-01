@@ -1,0 +1,176 @@
+"""PDF ingestor: Docling by default, Marker or PyMuPDF as alternatives.
+
+Pages that contain figures or charts are also rendered as images into assets/, so charts are
+not reduced to nothing. Pages without a text layer are flagged and OCR'd (Tesseract locally,
+or a vision LLM when pdf.scan_backend: vision_llm).
+"""
+from __future__ import annotations
+
+import re
+import subprocess
+import shutil
+from pathlib import Path
+
+from ..contract import SourceRecord, SourceWriter, hash_file, make_id, stage
+from .base import PDF_EXT, Context, Ingestor, IngestResult, InputItem, first_working, register
+
+
+def _docling(path: Path, cfg: dict) -> str:
+    from docling.document_converter import DocumentConverter
+    return DocumentConverter().convert(str(path)).document.export_to_markdown()
+
+
+def _marker(path: Path, cfg: dict) -> str:
+    from marker.converters.pdf import PdfConverter
+    from marker.models import create_model_dict
+    from marker.output import text_from_rendered
+    text, _, _ = text_from_rendered(PdfConverter(artifact_dict=create_model_dict())(str(path)))
+    return text
+
+
+def _pymupdf(path: Path, cfg: dict) -> str:
+    try:
+        import pymupdf4llm
+        return pymupdf4llm.to_markdown(str(path))
+    except ImportError:
+        import fitz
+        with fitz.open(path) as doc:
+            return "\n\n".join(f"## Page {i + 1}\n\n{p.get_text('text').strip()}" for i, p in enumerate(doc))
+
+
+RUNNERS = {"docling": _docling, "marker": _marker, "pymupdf": _pymupdf}
+
+
+def _page_survey(path: Path, min_chars: int) -> list[dict]:
+    import fitz
+    out = []
+    with fitz.open(path) as doc:
+        for i, page in enumerate(doc):
+            text = page.get_text("text").strip()
+            imgs = [im for im in page.get_images(full=True)]
+            area = page.rect.width * page.rect.height
+            big_imgs = 0
+            for im in imgs:
+                for r in page.get_image_rects(im[0]):
+                    if r.width * r.height > 0.04 * area:
+                        big_imgs += 1
+            drawings = len(page.get_drawings())
+            out.append({"page": i + 1, "chars": len(text), "no_text": len(text) < min_chars,
+                        "figure": big_imgs > 0 or drawings > 40})
+    return out
+
+
+def _render(path: Path, page_no: int, dest: Path, dpi: int) -> None:
+    import fitz
+    with fitz.open(path) as doc:
+        doc[page_no - 1].get_pixmap(dpi=dpi).save(dest)
+
+
+def _ocr_page(png: Path, cfg: dict, ctx: Context) -> tuple[str, str]:
+    backend = cfg["pdf"].get("scan_backend", "tesseract")
+    if backend == "vision_llm":
+        from ..providers import get_vision_provider
+        section = cfg["provider"].get("vision") or cfg["frame_selection"]
+        prov = get_vision_provider(section, cfg)
+        text = prov.generate([png], "Transcribe all text on this page exactly, in reading order, as "
+                                    "Markdown. Keep tables as Markdown tables. Do not add commentary.")
+        return text, f"{prov.backend}:{prov.model}"
+    if backend == "tesseract" and shutil.which("tesseract"):
+        langs = cfg["ocr_crosscheck"].get("tesseract_langs", "ell+eng")
+        r = subprocess.run(["tesseract", str(png), "stdout", "-l", langs], capture_output=True, text=True)
+        if r.returncode == 0:
+            return r.stdout.strip(), f"tesseract:{langs}"
+    return "", "none"
+
+
+def pdf_title(path: Path, markdown: str) -> str:
+    try:
+        import fitz
+        with fitz.open(path) as doc:
+            t = (doc.metadata or {}).get("title", "").strip()
+            if t and len(t) > 3 and not t.lower().startswith(("microsoft", "untitled")):
+                return t
+    except Exception:
+        pass
+    m = re.search(r"^#\s+(.+)$", markdown, re.M)
+    return m.group(1).strip() if m else path.stem.replace("_", " ")
+
+
+def ingest_pdf_file(path: Path, ctx: Context, *, origin: list[str], content_hash: str,
+                    source_type: str = "pdf", extra_pipeline: dict | None = None,
+                    title: str | None = None) -> IngestResult:
+    """Shared by the PDF ingestor and the Office ingestor (slides rendered via PDF)."""
+    cfg = ctx.config
+    pc = cfg["pdf"]
+    backends = [pc["backend"], *[b for b in pc.get("fallbacks", []) if b != pc["backend"]]]
+    used, markdown, errors = first_working(backends, RUNNERS, path, cfg)
+    flags = [f"backend fallback: {e}" for e in errors]
+    title = title or pdf_title(path, markdown)
+    sid = make_id(title, content_hash)
+    w = SourceWriter(ctx.sources_dir, sid)
+    try:
+        survey = _page_survey(path, pc.get("min_text_chars", 25))
+        scanned = [pg for pg in survey if pg["no_text"]]
+        text_layer_chars = sum(pg["chars"] for pg in survey)
+        extracted_chars = len(re.sub(r"[^\w]", "", markdown))
+        # Docling (and recent PyMuPDF) OCR scanned pages themselves; only run our own OCR when
+        # the backend's output is clearly missing the scanned pages' text
+        backend_ocrd = bool(scanned) and extracted_chars - text_layer_chars > 40 * len(scanned)
+        renders, ocr_sections, ocr_tool = [], [], None
+        for pg in survey:
+            needs_render = (pc.get("render_figure_pages", True) and pg["figure"]) or pg["no_text"]
+            if not needs_render:
+                continue
+            dest = w.asset_path(f"page_{pg['page']:03d}.png")
+            _render(path, pg["page"], dest, pc.get("render_dpi", 200))
+            renders.append((pg, dest.name))
+            if not pg["no_text"]:
+                continue
+            if backend_ocrd:
+                flags.append(f"page {pg['page']}: no text layer, text from {used}'s OCR - check against the page image")
+                continue
+            text, ocr_tool = _ocr_page(dest, cfg, ctx)
+            if text:
+                ocr_sections.append(f"### Page {pg['page']} (OCR)\n\n![](assets/{dest.name})\n\n{text}")
+                flags.append(f"page {pg['page']}: no text layer, OCR'd with {ocr_tool}")
+            else:
+                flags.append(f"page {pg['page']}: no text layer and no OCR available")
+        body = [f"# {title}", markdown.strip()]
+        if ocr_sections:
+            body += ["## Scanned pages (OCR)", *ocr_sections]
+        if backend_ocrd:
+            body.append("## Scanned page images\n\n" + "\n".join(
+                f"- Page {pg['page']}: ![](assets/{n})" for pg, n in renders if pg["no_text"]))
+        figs = [(pg, n) for pg, n in renders if pg["figure"] and not pg["no_text"]]
+        if figs:
+            body.append("## Page renders (figures and charts)\n\n"
+                        "Pages with figures, charts or diagrams, rendered so they can be inspected directly.")
+            body += [f"- Page {pg['page']}: ![](assets/{n})" for pg, n in figs]
+        pipeline = {"extraction": stage(used, package={"pymupdf": "pymupdf", "docling": "docling",
+                                                        "marker": "marker-pdf"}[used])}
+        if renders:
+            pipeline["page_render"] = stage("pymupdf", dpi=pc.get("render_dpi", 200))
+        if ocr_tool and ocr_tool != "none":
+            pipeline["scan_ocr"] = {"tool": ocr_tool}
+        pipeline.update(extra_pipeline or {})
+        rec = SourceRecord(id=sid, title=title, source_type=source_type, origin=origin,
+                           hash=content_hash, pipeline=pipeline, flags=flags,
+                           stats={"pages": len(survey), "page_renders": len(renders)})
+        md = w.commit(rec, "\n\n".join(body))
+    except Exception:
+        w.abort()
+        raise
+    return IngestResult(sid, md, pipeline, flags)
+
+
+@register
+class PDFIngestor(Ingestor):
+    name = "pdf"
+
+    def can_handle(self, item: InputItem) -> bool:
+        return item.kind == "file" and item.suffix in PDF_EXT
+
+    def ingest(self, item: InputItem, ctx: Context) -> IngestResult:
+        return ingest_pdf_file(item.path, ctx, origin=[f"inbox/{item.key}"],
+                               content_hash=item.content_hash or hash_file(item.path),
+                               title=item.sidecar.get("title"))
