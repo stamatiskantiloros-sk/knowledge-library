@@ -477,3 +477,20 @@ def test_handbook_finish_checks_an_agents_draft(tmp_path):
     (out / "draft.md").write_text("# T\n\n[[slide 1]]\n", encoding="utf-8")
     assert finish(tmp_path / "books")[0]["issues"] == 0
     assert "assets/f.jpg" in (out / "handbook.md").read_text(encoding="utf-8")
+
+
+def test_session_reader_waits_for_written_answers(tmp_path):
+    import pytest
+    import json
+    from knowlib.providers.agent import AgentJobsWaiting, AgentPending, AgentProvider, stop_if_waiting
+    frame = tmp_path / "f.jpg"
+    provider = AgentProvider({"agent_model": "haiku"}, tmp_path)
+    with pytest.raises(AgentPending):
+        provider.generate([frame], "Read this")
+    with pytest.raises(AgentJobsWaiting):
+        stop_if_waiting(tmp_path)
+    job = json.loads((tmp_path / "jobs.json").read_text())[0]
+    assert job["model"] == "haiku" and job["images"] == [str(frame)]
+    Path(job["answer"]).write_text("the slide text\n")
+    assert provider.generate([frame], "Read this") == "the slide text"
+    stop_if_waiting(tmp_path)

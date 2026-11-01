@@ -80,6 +80,8 @@ Exact model ids live in `config.yaml`. Choose models by testing them on your own
 7. OCR cross-check with Apple Vision and Tesseract. A slide is flagged only when both disagree with the model.
 8. Captions: the fast model for ordinary slides, the strong model for tables, charts, Markdown tables and flagged slides. A stalled the strong model falls back to the fast model.
 
+**Session reader (optional).** `knowlib process --reader session` replaces the strong model with subagents in a Claude Code session, with no API key. Frame decisions stay local. Reading then runs in passes: knowlib lists its jobs in `.work/agent/jobs.json` and stops, subagents write one answer file per job, and the next run continues. Sonnet reads tables, charts, code, whiteboards, diagrams and demos, Haiku reads the rest, and Sonnet writes the hard captions. On 11 test frames Sonnet matched or beat the strong local model, and Haiku missed one chart axis. On a real 3:42 lecture with 26 frame groups, reading and captions took a few minutes against an expected hour or more. It has been tested on that one lecture. It uses subscription limits and sends frames to Anthropic, so `local_only` refuses it.
+
 **Other materials** go through the pdf, office, web and text ingestors. PDF uses Docling with PyMuPDF as a fallback.
 
 **Directories.** `knowlib process --input <folder> --layout "{course}/{date}/{name}"` ingests any folder. Fields: `course`, `folder`, `name`, `date`. The layout is a tree of symlinks in `organized/`. Real data stays in `sources/`, so changing the layout breaks no citation and needs no reprocessing. Keys from `--input` carry the folder name, so same-named files in different courses stay apart.
@@ -256,7 +258,7 @@ Stages 1, 2 and 4 are local. Stage 3 and the digest send lecture text, frames an
 1. Install: `scripts/install-mac.sh`, or a Python 3.12 venv with `pip install -e .`, plus ffmpeg, tesseract, pandoc, Chrome, a local model server and ripgrep.
 2. `knowlib init <library>`, then set `config.yaml` as in section 4.
 3. Load the models in LM Studio under the exact ids in section 4.
-4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 39 pass).
+4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 40 pass).
 5. Run sections 6–8 on one short lecture and compare with its slides.
 
 To rebuild without knowlib, keep these in order of importance: the separation of reading and writing, the rules in section 7, the checks in section 8, and the `source.md` structure.

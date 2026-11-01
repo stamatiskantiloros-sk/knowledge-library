@@ -22,6 +22,7 @@ from ..media.select import caption_kept, fill_text_from_ocr, fmt_ts, kept_to_jso
 from ..media.session import assemble
 from ..media.transcribe import map_segments, transcribe
 from ..providers import get_vision_provider, release_all
+from ..providers.agent import stop_if_waiting
 from .base import Context, Ingestor, IngestResult, InputItem, register
 
 log = logging.getLogger("knowlib")
@@ -150,7 +151,12 @@ class MediaSessionIngestor(Ingestor):
                 flags.append("no stable slides detected (talking head or constant motion): sparse interval frames used")
             provider = get_vision_provider(cfg["frame_selection"], cfg)
             kept, dropped, sel_stats = select(cands, segs, provider, cfg, work)
+            stop_if_waiting(Path(cfg["agent_dir"]))
             pipeline["frame_selection"] = provider.provenance()
+            fs = cfg["frame_selection"]
+            if fs.get("transcribe_model"):
+                pipeline["reader"] = {k: {**fs["transcribe_model"], **s}.get("agent_model") or {**fs, **fs["transcribe_model"], **s}.get("openai_model")
+                                      for k, s in (("ordinary", {}), ("hard", fs.get("transcribe_hard") or {}))}
             split = bool(cfg["frame_selection"].get("split"))
             if not split:
                 release_all()   # free the VLM before the next session/stage loads a model
@@ -166,8 +172,9 @@ class MediaSessionIngestor(Ingestor):
                                       cfg["ocr_crosscheck"])
             if split:
                 stats["captions"] = caption_kept(kept, segs, cfg, work)
-                if cfg["frame_selection"].get("caption_model"):
-                    pipeline["caption"] = cfg["frame_selection"]["caption_model"].get("openai_model")
+                stop_if_waiting(Path(cfg["agent_dir"]))
+                if strong := cfg["frame_selection"].get("caption_model"):
+                    pipeline["caption"] = strong.get("agent_model") or strong.get("openai_model")
                 release_all()
             if any(k.ocr.get("backends") for k in kept):
                 pipeline["ocr_crosscheck"] = {"tool": ",".join(cfg["ocr_crosscheck"]["backends"]),

@@ -96,6 +96,11 @@ def get_vision_provider(section: dict, cfg: dict) -> VisionProvider:
             "Use backend mlx-vlm or ollama, or drop local_only for non-confidential material.")
     key = (backend, section.get("model"), section.get("ollama_model"), section.get("api_model"),
            section.get("base_url"), section.get("openai_model"))
+    if backend == "agent":
+        if cfg.get("local_only"):
+            raise LocalOnlyViolation("local_only is set; refusing to send frames through the session.")
+        from .agent import AgentProvider
+        return AgentProvider(section, Path(cfg["agent_dir"]))
     if key in _CACHE:
         return _CACHE[key]
     if backend == "openai":

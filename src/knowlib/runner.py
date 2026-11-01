@@ -20,6 +20,7 @@ from .config import load_config
 from .contract import hash_file, hash_text, now_iso
 from .ingestors.base import Context, InputItem, find_ingestor
 from .manifest import Manifest
+from .providers.agent import AgentJobsWaiting
 from .router import discover
 
 log = logging.getLogger("knowlib")
@@ -90,6 +91,7 @@ def link_source(ctx: Context, key: str, source_id: str, layout: str) -> None:
 def process(root: Path, *, force: bool = False, only: str | list[str] | None = None, dry_run: bool = False,
             overrides: dict | None = None, limit: int | None = None, only_lectures: list[str] | None = None) -> dict:
     ctx, manifest = open_library(root, overrides, force)
+    ctx.config["agent_dir"] = str(ctx.work_dir / "agent")
     hc = HashCache(ctx.work_dir / "hash_cache.json")
     items = discover(ctx.inbox, ctx.config["library"].get("ignore"))
     layout = ctx.config["library"].get("layout")
@@ -97,7 +99,7 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
         for i in items:
             i.key = f"{ctx.inbox.name}/{i.key}"
     report = {"started_at": now_iso(), "new": [], "updated": [], "unchanged": 0, "failed": [],
-              "unsupported": [], "flags": {}, "renamed": [], "orphans": []}
+              "unsupported": [], "flags": {}, "renamed": [], "waiting": [], "orphans": []}
     seen_keys = set()
     only_list = [only] if isinstance(only, str) else list(only or [])
     wanted = sum(1 for i in items if not only_list or any(o in i.key for o in only_list))
@@ -130,6 +132,11 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
         progress.item(position, item.key)
         try:
             res = ing.ingest(item, ctx)
+        except AgentJobsWaiting as e:
+            print(f"           waiting: {e} in {ctx.config['agent_dir']}/jobs.json", file=sys.stderr, flush=True)
+            report["waiting"].append(item.key)
+            progress.item_done()
+            continue
         except Exception as e:  # noqa: BLE001 - one bad file must not stop the batch
             log.error("failed %s: %s", item.key, e)
             manifest.record_failure(item.key, content_hash=item.content_hash, ingestor=ing.name,

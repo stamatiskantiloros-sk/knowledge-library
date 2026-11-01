@@ -25,6 +25,7 @@ from PIL import Image
 
 from .. import progress
 from ..providers import get_vision_provider, release_all
+from ..providers.agent import AgentPending
 from .frames import Candidate, _small, resized_copy, tiles
 from .ocr import BACKENDS, crosscheck, normalize
 
@@ -204,7 +205,7 @@ def select(cands: list[Candidate], segs: list[dict], provider, cfg: dict, work: 
         cache_path.write_text(json.dumps(cache, ensure_ascii=False))
         return res
 
-    reader, reader_tag = provider, model_tag
+    reader = provider
     if split and fs.get("transcribe_model"):
         # all decisions first, so only one model is in memory at a time
         for n, c in enumerate(cands, 1):
@@ -212,7 +213,10 @@ def select(cands: list[Candidate], segs: list[dict], provider, cfg: dict, work: 
             decide(c)
         release_all()
         reader = get_vision_provider({**fs, **fs["transcribe_model"]}, cfg)
-        reader_tag = f"{reader.backend}:{reader.model}"
+    hard = None
+    if split and fs.get("transcribe_hard"):
+        hard = get_vision_provider({**fs, **fs["transcribe_model"], **fs["transcribe_hard"]}, cfg)
+    hard_types = fs.get("transcribe_hard_types", ["table", "chart", "code", "whiteboard", "diagram", "demo"])
 
     for n, c in enumerate(cands, 1):
         progress.stage("transcription" if split else "frames", n, len(cands))
@@ -244,18 +248,21 @@ def select(cands: list[Candidate], segs: list[dict], provider, cfg: dict, work: 
                 text, text_source = cache[tkey], "vlm-tiled-native"
                 stats["tiled"] += 1
         elif split:
-            tkey = f"text:{best.path.name}:{reader_tag}"
+            kind = str(res.get("content_type", "other"))
+            frame_reader = hard if hard and kind in hard_types else reader
+            tkey = f"text:{best.path.name}:{frame_reader.backend}:{frame_reader.model}"
             if tkey not in cache:
                 try:
-                    reply = _strip_fence(reader.generate([best.path], TRANSCRIBE_PROMPT))
+                    reply = _strip_fence(frame_reader.generate([best.path], TRANSCRIBE_PROMPT))
                     # a reply cut off at the limit is a runaway loop, not text; OCR fills it in later
-                    cache[tkey] = "" if getattr(reader, "last_finish", None) == "length" else reply
+                    cache[tkey] = "" if getattr(frame_reader, "last_finish", None) == "length" else reply
                     cache_path.write_text(json.dumps(cache, ensure_ascii=False))
+                except AgentPending:
+                    pass
                 except (OSError, RuntimeError) as e:   # server gone, stalled, or lms could not load it
                     log.warning("transcription of %s failed (%s)", best.path.name, e)
                 stats["calls"] += 1
             text = cache.get(tkey, "")
-            kind = str(res.get("content_type", "other"))
             decision = "supersedes_previous" if kept and _builds_on(kept[-1], text, kind) else "keep"
 
         if res.get("_failed"):
@@ -313,6 +320,8 @@ def caption_kept(kept: list[Kept], segs: list[dict], cfg: dict, work: Path) -> d
                                                caption_language=fs.get("caption_language", "English"))
                 try:
                     cache[key] = provider.generate([Path(k.frame)], prompt).strip()
+                except AgentPending:
+                    continue
                 except (OSError, RuntimeError) as e:   # server gone, or lms could not load it
                     log.warning("caption of %s failed (%s)", Path(k.frame).name, e)
                     failed.append(k)

@@ -112,6 +112,11 @@ def parse_sets(pairs: list[str]) -> dict:
     return out
 
 
+SESSION_READER = {"transcribe_model": {"backend": "agent", "agent_model": "haiku"},
+                  "transcribe_hard": {"agent_model": "sonnet"},
+                  "caption_model": {"backend": "agent", "agent_model": "sonnet"}}
+
+
 def cmd_process(args) -> int:
     from .config import deep_merge
     from .runner import process
@@ -120,10 +125,14 @@ def cmd_process(args) -> int:
         overrides = deep_merge(overrides, {"library": {"inbox": str(Path(args.input).expanduser().resolve())}})
     if args.layout:
         overrides = deep_merge(overrides, {"library": {"layout": args.layout}})
+    if args.reader == "session":
+        overrides = deep_merge(overrides, {"frame_selection": SESSION_READER})
     rep = process(_lib(args), force=args.force, only=args.only, dry_run=args.dry_run, overrides=overrides,
                   limit=args.limit)
     print(json.dumps({k: rep[k] for k in ("new", "updated", "unchanged", "failed", "unsupported", "renamed")},
                      indent=2, ensure_ascii=False))
+    if rep["waiting"]:
+        print(f"\n{len(rep['waiting'])} sources wait for readings: answer .work/agent/jobs.json, then run this again")
     if rep["flags"]:
         print(f"\n{sum(len(v) for v in rep['flags'].values())} flags on {len(rep['flags'])} sources - run `knowlib qa`")
     if rep["pending_synthesis"]:
@@ -242,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--input", help="folder to ingest instead of the inbox")
     s.add_argument("--layout", help='links in organized/, e.g. "{course}/{date}/{name}"; also {folder}')
     s.add_argument("--force", action="store_true", help="re-ingest even if unchanged")
+    s.add_argument("--reader", choices=["local", "session"], default="local",
+                   help="session: Haiku and Sonnet read the frames through Claude Code, without an API key")
     s.add_argument("--only", action="append", help="only inputs whose inbox path contains this text (repeatable)")
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--local-only", action="store_true", help="block all API calls for this run")
