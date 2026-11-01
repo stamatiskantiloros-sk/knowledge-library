@@ -1,6 +1,6 @@
 # knowlib — Knowledge Library pipeline
 
-Turns a folder of mixed materials (PDFs, Office files, web pages, audio, video) into a Markdown knowledge library that a frontier model can use for demanding academic and industry work. Implements the *Knowledge Library — System Design* doc.
+Turns a folder of mixed materials (PDFs, Office files, web pages, audio, video) into a Markdown knowledge library that a frontier model can use for demanding academic and industry work. See [docs/system-design.md](docs/system-design.md) for the full design.
 
 ```
 inbox/  ──►  router + manifest  ──►  ingestors (pdf · office · web · media)  ──►  sources/<id>/source.md + assets/

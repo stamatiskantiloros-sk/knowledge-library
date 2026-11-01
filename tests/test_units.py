@@ -494,3 +494,5 @@ def test_session_reader_waits_for_written_answers(tmp_path):
     Path(job["answer"]).write_text("the slide text\n")
     assert provider.generate([frame], "Read this") == "the slide text"
     stop_if_waiting(tmp_path)
+    with pytest.raises(AgentPending):             # the same frame name in another lecture is another job
+        provider.generate([tmp_path / "other" / "f.jpg"], "Read this")

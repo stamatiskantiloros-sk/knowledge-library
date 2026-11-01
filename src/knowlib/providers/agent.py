@@ -32,7 +32,7 @@ class AgentProvider(VisionProvider):
 
     def generate(self, images: list[Path], prompt: str, *, json_mode: bool = False,
                  max_tokens: int | None = None) -> str:
-        names = "|".join(Path(p).name for p in images)
+        names = "|".join(str(Path(p).resolve()) for p in images)   # frame names repeat across lectures
         job = hashlib.sha256(f"{self.model}\n{names}\n{prompt}".encode()).hexdigest()[:16]
         answer = self.folder / "answers" / f"{job}.md"
         if answer.exists():
