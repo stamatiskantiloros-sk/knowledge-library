@@ -66,7 +66,6 @@ class IngestResult:
     source_md: Path
     pipeline: dict
     flags: list[str]
-    extra_items: list[InputItem] = field(default_factory=list)   # e.g. a slide PDF named in a session
 
 
 class Ingestor(ABC):

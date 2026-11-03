@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from .. import progress
 from .av import require, run
 
 
@@ -83,7 +84,8 @@ def group_frames(frames: list[Frame], vc: dict) -> tuple[list[Candidate], dict]:
 
     groups: list[list[Frame]] = []
     anchor_hash = anchor_arr = None
-    for f in frames:
+    for n, f in enumerate(frames, 1):
+        progress.stage("grouping frames", n, len(frames))
         small = _small(f.path, sw)
         arr = np.asarray(small, dtype=np.float32)
         f.sharpness = _sharpness(arr)

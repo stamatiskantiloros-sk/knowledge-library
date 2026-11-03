@@ -5,6 +5,7 @@
   knowlib process [-L DIR]           process inbox: ingest new or changed material
   knowlib status [-L DIR]            counts, failures, sources waiting for synthesis
   knowlib handbook --output DIR      one book per lecture, from --input or the inbox
+  knowlib digest [-L DIR]            a finding aid per long PDF (book), for handbooks that cite it
   knowlib qa [-L DIR]                every flag across sources, for the QA pass
   knowlib reprocess --where K=V      mark matching sources stale and re-ingest them
   knowlib pending [-L DIR]           source ids not yet synthesized into notes
@@ -223,6 +224,22 @@ def cmd_handbook(args) -> int:
     return 0
 
 
+def cmd_digest(args) -> int:
+    from .config import deep_merge
+    from .digest import run
+    from .providers.agent import AgentJobsWaiting
+    overrides = deep_merge(parse_sets(args.set), {"local_only": True} if args.local_only else {})
+    if args.reader == "session":
+        overrides = deep_merge(overrides, {"digest": {"backend": "agent", "agent_model": args.agent_model}})
+    try:
+        results = run(_lib(args), ids=args.ids or None, force=args.force, overrides=overrides)
+    except AgentJobsWaiting as e:
+        print(f"waiting for {e}: answer .work/agent/jobs.json, then run this again")
+        return 0
+    print(json.dumps(results, indent=2, ensure_ascii=False) if results else "no PDFs long enough for a digest")
+    return 0
+
+
 def cmd_pending(args) -> int:
     from .manifest import Manifest
     print("\n".join(Manifest(_lib(args) / "manifest.json").pending_synthesis()))
@@ -274,6 +291,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--input", help="folder of lectures and course materials (default: the inbox)")
     s.add_argument("--only", action="append", help="only lectures whose path contains this text")
     s.set_defaults(fn=cmd_handbook)
+    s = lib(sub.add_parser("digest", help="a finding aid per long PDF, for handbooks that cite it"))
+    s.add_argument("--ids", nargs="*", default=[], help="only these source ids")
+    s.add_argument("--force", action="store_true", help="rewrite digests that are already current")
+    s.add_argument("--reader", choices=["local", "session"], default="local",
+                   help="session: a Claude model reads the chapters through Claude Code")
+    s.add_argument("--agent-model", default="sonnet", help="with --reader session: sonnet or haiku")
+    s.add_argument("--local-only", action="store_true", help="block all API calls for this run")
+    s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    s.set_defaults(fn=cmd_digest)
     lib(sub.add_parser("status")).set_defaults(fn=cmd_status)
     lib(sub.add_parser("qa")).set_defaults(fn=cmd_qa)
     s = lib(sub.add_parser("reprocess"))

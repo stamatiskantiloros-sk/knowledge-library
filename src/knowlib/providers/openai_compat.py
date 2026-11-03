@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import urllib.request
@@ -69,6 +70,7 @@ class OpenAICompatProvider(VisionProvider):
             choice = json.loads(r.read())["choices"][0]
         self.last_finish = choice.get("finish_reason")
         reply = choice["message"]["content"] or ""
+        reply = re.sub(r"<thought>.*?</thought>", "", reply, flags=re.S)   # Gemma's reasoning
         return reply.split("</think>")[-1].strip()           # reasoning models
 
     def provenance(self) -> dict:

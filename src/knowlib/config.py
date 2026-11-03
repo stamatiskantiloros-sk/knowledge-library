@@ -86,6 +86,13 @@ DEFAULTS: dict[str, Any] = {
         "language": "English",
         "max_tokens": 6000,
     },
+    "digest": {                          # book finding aids; overrides of frame_selection for the reading model
+        "min_pages": 100,                    # PDFs this long get a digest
+        "max_chars": 120000,                 # one request per chapter, split when longer (~30K tokens)
+        "max_tokens": 8000,
+        "fallback_model": None,              # overrides for a stronger model that rereads a part the first one looped on
+        "fallback_max_chars": 60000,         # it reads such a part in pieces this long
+    },
     "ocr_crosscheck": {
         "backends": ["apple-vision"],        # apple-vision | tesseract ; add tesseract as a third opinion
         "languages": ["el-GR", "en-US"],

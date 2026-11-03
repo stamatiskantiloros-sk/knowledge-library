@@ -96,7 +96,9 @@ Tell the user briefly: what was ingested, what failed or needs attention (flags 
 When the user asks for a handbook, the agent writes it, so no API key or local writing model is needed.
 
 1. `knowlib handbook --prepare --output <target> --only "<lecture>"` ingests what is new and writes `<target>/<lecture>/brief.md`. Add `--input <folder>` for a course folder outside the inbox. Run it only when ingestion is not already running.
+   Before the first handbook of a course with books (PDFs of 100 pages or more), run `knowlib digest`: a local model reads each book once, a chapter at a time, and every later brief reuses the digest. It takes about 30 minutes per 100 pages (3½ hours for a 650-page book), so run it in the background or overnight. `--reader session --agent-model sonnet` hands the chapters to a subagent instead, never for `local_only` material.
 2. Follow the rules at the top of the brief: read every slide, open the images it requires, write `draft.md` and `corrections.md` beside it.
+   A long book among the materials has a digest, listed in the brief beside it. Use the digest to find pages, then read them in the book's `source.md`, where each page starts with `<!-- page N (pdf M) -->`. Cite the book and its printed page N, never the digest.
 3. `knowlib handbook --finish --output <target>` checks the draft and writes `handbook.md`, `review.md` and `handbook.pdf`. Resolve what `review.md` lists under "To check", then finish again.
 4. Check any recalculation by running it, not by mental arithmetic. Material ingested with `local_only` stays out of this procedure unless the user agrees for that lecture.
 

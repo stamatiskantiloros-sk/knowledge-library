@@ -68,7 +68,7 @@ BRIEF_RULES = """You are writing the study book of one recorded lecture, for a s
 4. Write only what the lecture contains: no links ahead, summaries or comments on the method. Attribute to the lecturer only what the transcript says. "What it shows" is an automatic description, never a source of claims.
 5. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said.
 6. If the lecturer says something wrong, keep it and add a note saying so, plainly.
-7. Add a note only where the student cannot follow without it: a line starting "> **Note (not from class):**", one or two sentences, naming its source. The passages below are the closest matches only: search all the course materials, listed at the end, for what the lecture leaves unclear, for conflicts with it, and to verify a note.
+7. Add a note only where the student cannot follow without it: a line starting "> **Note (not from class):**", one or two sentences, naming its source; for a book, also its page, from the `<!-- page N (pdf M) -->` line above the passage (N is the printed page). The passages below are the closest matches only: search all the course materials, listed at the end, for what the lecture leaves unclear, for conflicts with it, and to verify a note.
 8. Write [[slide N]] on its own line where the reader needs an image: charts, tables, diagrams, screens. Use LaTeX for formulas and Markdown tables, with the same number of cells in every row.
 9. End each section with its slides and times in italics. Call the speaker "the lecturer", without he or she.
 
@@ -468,7 +468,13 @@ def brief(lecture: Lecture, materials: list[tuple[str, str]]) -> str:
     lines += ["## Course-material passages", ""]
     lines += [f"From {t}:\n{c}\n" for t, c in passages] or ["None."]
     lines += ["## All course materials", "", "Search these with `rg -i \"<term>\" <path>`.", ""]
-    lines += [f"- {t}: {lecture.folder.parent / sid / 'source.md'}" for t, _, sid in materials] or ["None."]
+    for t, _, sid in materials:
+        folder = lecture.folder.parent / sid
+        digest = folder / "digest.md"
+        lines.append(f"- {t}: {folder / 'source.md'}" + (f"\n  Digest (find pages here, then read and cite the book): {digest}"
+                                                           if digest.exists() else ""))
+    if not materials:
+        lines.append("None.")
     return "\n".join(lines) + "\n"
 
 

@@ -35,7 +35,7 @@ These came from testing. Section 12 gives the evidence.
                             ├─ 1. INGEST (local) ──> sources/<id>/source.md + frames
  PDFs, web, office, books ──┘                                  │
                                                                │
- books only: 1b. DIGEST (Sonnet, not built) ──> digest.md      │
+ books only: 1b. DIGEST (local 9B, once) ──> digest.md         │
                                                                ▼
                             2. PREPARE (knowlib) ──> <output>/<lecture>/brief.md
                                                                │
@@ -51,7 +51,7 @@ These came from testing. Section 12 gives the evidence.
 | Stage | Who runs it | Where | Cost |
 |---|---|---|---|
 | Ingest | knowlib, fast and strong models | Local | Time only |
-| Digest (not built) | Sonnet subagent | Session | Subscription limits |
+| Digest (books) | Fast local model, or a Sonnet subagent | Local, or session | About 30 minutes per 100 pages locally |
 | Prepare | knowlib | Local | Seconds, plus any new ingestion |
 | Write | Opus 5.5 agent | Session | Subscription limits |
 | Finish | knowlib | Local | Seconds |
@@ -198,18 +198,29 @@ It then writes:
 
 A planned standard setup is one folder per course holding materials and lectures, passed with `--input`, and a separate target folder for books. Folder names of the form course and lecture date sort correctly.
 
-## 10. Digest for books: Not built
+## 10. Digest for books
 
-Whole books are too long to pass to Opus for each lecture, and search alone can miss a concept named differently from the lecture.
+Whole books are too long to pass to Opus for each lecture, and search alone can miss a concept named differently from the lecture. `knowlib digest` writes `sources/<id>/digest.md` once per book; the brief lists it beside the book.
 
-1. Trigger: a course material over about 100 pages. The threshold is untested.
-2. A Sonnet subagent in the session reads the book chapter by chapter, and Haiku is allowed for long, low-stakes reading.
-3. Output: `sources/<id>/digest.md`, with per-chapter topics, definitions, formulas and page numbers.
-4. One digest per book, reused for every lecture. The hash of `source.md` decides when to redo it.
-5. The brief lists the digest beside the book.
-6. Opus uses it to find pages and then reads the original `source.md`. A note cites the book and page, never the digest.
+1. **Trigger:** a PDF of 100 pages or more (`digest.min_pages`) whose ingestion found an outline.
+2. **From the PDF itself, exact:** the contents and the list of tables and figures, with printed page numbers, from `assets/outline.json`. Ingestion marks every page `<!-- page N (pdf M) -->` with the book's own page label.
+3. **From a model, one part at a time:** key terms, formulas and worked examples, each with its page. A part is a chapter, split at its sections when longer than 120,000 characters (about 30K tokens), so the fast 9B model reads it at 64K context.
+4. **Loops:** a reply that repeats the same items three times or more is a loop. The repeats are dropped. With `fallback_model` set (Qwopus in the library, at 32K context with reasoning off), that part is read again once the 9B has finished the book and been unloaded, in pieces of 60,000 characters, and the replies are merged under the three headings. A part that still loops carries a warning to search the book. If the fallback cannot load or stalls, the first reply is kept with its warning.
+5. **Checks:** items citing a page outside their part are marked ⚠.
+6. **Reuse:** replies are cached in `.work/digest/`, and the hash of `source.md` decides when to redo the digest.
+7. **Use:** Opus finds pages in the digest, then reads them in `source.md`. A note cites the book and its printed page, never the digest.
 
-Build it when a real course has books, and test it on one.
+`--reader session` hands the parts to a Sonnet subagent instead, never for `local_only` material.
+
+**Test book:** Damodaran, *Applied Corporate Finance* (4th ed.), 654 pages.
+- Ingestion with Docling took 8.4 minutes. It found 422 formulas; all were filled from the text layer, which keeps the symbols but not fractions or sub- and superscripts.
+- The 9B digest took 3 h 23 min (about 30 minutes per 100 pages).
+- Page accuracy, measured by finding each item's name on its cited page: in chapter 3, 26 of 30 items were on the page and 4 one page off; in chapter 8 part 1, 128 of 133 on the page and 5 one off.
+- Loops: the 9B looped on 7 of the 29 parts, each time running to the 8,000-token limit, while the longest healthy reply was about 2,000 tokens. Qwopus reread the 7 in 12 pieces in 2 h 14 min, with no loops left.
+- Page accuracy across the book: Qwopus's rereads put 249 of 253 items (98%) on the cited page; the 9B's other parts, 400 of 460 (87%), most of the rest one page off. Qwopus also found more per part: 51 items for chapter 10 against 13–26 for a typical 9B part.
+- Qwopus reasoning: on half of chapter 10, thinking took 76% of the output (4,870 of 6,379 tokens) and 31 minutes. With `reasoning_effort: none` it took 15 minutes and gave 41 items, all on the right page, against 31.
+- Qwopus on a second, Linux machine over the network (Q4_K_M at 71K context) had not finished a whole part after an hour, so it is slower than the Mac for this model and is not used.
+- Every prompt names its part as "part X of N", so re-splitting the book changed every prompt and the cache missed: a rerun meant to take seconds took 2 h 56 min. A part's prompt now names only its chapter and pages, so re-splitting rereads only the parts that changed.
 
 ## 11. Privacy
 
@@ -258,7 +269,7 @@ Stages 1, 2 and 4 are local. Stage 3 and the digest send lecture text, frames an
 1. Install: `scripts/install-mac.sh`, or a Python 3.12 venv with `pip install -e .`, plus ffmpeg, tesseract, pandoc, Chrome, a local model server and ripgrep.
 2. `knowlib init <library>`, then set `config.yaml` as in section 4.
 3. Load the models in LM Studio under the exact ids in section 4.
-4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 40 pass).
+4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 49 pass).
 5. Run sections 6–8 on one short lecture and compare with its slides.
 
 To rebuild without knowlib, keep these in order of importance: the separation of reading and writing, the rules in section 7, the checks in section 8, and the `source.md` structure.

@@ -28,7 +28,7 @@ knowlib init ~/KnowledgeLibrary          # creates inbox/, sources/, notes/, con
 knowlib doctor -L ~/KnowledgeLibrary     # shows what is installed for the configured backends
 ```
 
-First run downloads the models (once): Whisper large-v3-turbo (~1.6 GB) and Qwen3-VL-8B 4-bit (~6 GB) from Hugging Face.
+First run downloads Whisper large-v3-turbo (~1.6 GB). Vision and text models run in LM Studio (`frame_selection.backend: openai`, `manage_lms: true`): knowlib loads and unloads them by id, so load each one once in LM Studio under the id in `config.yaml`. The tested setup is a fast 9B model for decisions and digests and Qwopus 27B for reading frames, captions and rereading looped digest parts.
 
 ## 2. Add material
 
@@ -64,11 +64,17 @@ Two audio-only recordings of the same lecture need a `session.yaml`; otherwise t
 
 ```bash
 knowlib process -L ~/KnowledgeLibrary            # ingest new/changed material (resumable)
+knowlib status -L ~/KnowledgeLibrary             # live progress of a run, from another shell
 knowlib qa -L ~/KnowledgeLibrary                 # every flag, for the QA pass
 knowlib pending -L ~/KnowledgeLibrary            # sources not yet synthesized into notes
+knowlib digest -L ~/KnowledgeLibrary             # finding aid for each book (PDF of 100+ pages)
+knowlib handbook --prepare --output ~/Handbooks --only "<lecture>"   # brief for a study handbook
+knowlib handbook --finish --output ~/Handbooks   # check the draft, write handbook.md and .pdf
 ```
 
-Then, in Claude with the library folder connected: **"process inbox"**. The agent follows `CLAUDE.md`: runs `knowlib process`, does QA, writes topic notes with citations (`[@source-id, slide 12, 14:32]`), updates `index.md` and `glossary.md`, and marks sources synthesized. For questions and work, it follows the **research** procedure: index → notes → sources.
+Long runs show a progress bar per stage with the time left; in a log file the same line is written every 30 seconds.
+
+Then, in Claude with the library folder connected: **"process inbox"**. The agent follows `CLAUDE.md`: runs `knowlib process`, does QA, writes topic notes with citations (`[@source-id, slide 12, 14:32]`), updates `index.md` and `glossary.md`, and marks sources synthesized. For questions and work, it follows the **research** procedure: index → notes → sources. For a **handbook**, the agent writes the book from the brief in the session; see [docs/handbook-design.md](docs/handbook-design.md). `--reader session` hands frame reading or digest parts to Claude subagents instead of local models (never for `local_only` material).
 
 ## 4. What a lecture looks like
 
@@ -132,10 +138,14 @@ src/knowlib/
   manifest.py      hashes, status, provenance queries, synthesis tracking
   router.py        inbox walk, session rules, URL lists
   runner.py        process inbox, incremental runs, last_run.json report
+  progress.py      progress bars, .work/progress.json for `knowlib status`
+  digest.py        book digests: chapter parts, loop check, fallback reread
   cli.py           knowlib command
   ingestors/       base (interface + registry), pdf, office, web, media
   media/           av, session, align, transcribe, frames, select, ocr
-  providers/       vision model layer: mlx-vlm, ollama, api (LiteLLM), mock
+  providers/       model layer: openai-compatible (LM Studio, llama.cpp, vLLM), mlx-vlm, ollama,
+                   api (LiteLLM), agent (Claude Code session reader), mock
+  handbook/        handbook briefs, checks and export; the local writer
   templates/       config.yaml, CLAUDE.md, index.md, glossary.md
 ```
 
@@ -144,14 +154,11 @@ Adding a source type: write `ingestors/<name>.py` with an `@register`'d `Ingesto
 ## 8. Tests
 
 ```bash
-pip install -e ".[dev]" python-pptx && pytest -q
+pip install -e ".[dev,docs]" && .venv/bin/python -m pytest -q tests
 ```
 
-The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page) and runs the whole pipeline with mock models, so it needs only ffmpeg.
+The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 49 tests pass.
 
-## 9. To verify on the Mac (first test batch)
+## 9. Status
 
-- mlx-whisper, mlx-vlm and Apple Vision paths run only on Apple Silicon; they were written against current APIs but not executed in the build environment. `knowlib doctor` then a single short lecture is the first check.
-- Greek: Whisper quality, Qwen-VL slide reading, and whether Apple Vision supports Greek on your macOS version (`knowlib doctor` reports it; if not, add `tesseract` to `ocr_crosscheck.backends`).
-- Dedup thresholds (`phash_threshold`, `ssim_threshold`, `camera_change_ratio`) on real footage, especially camera-filmed projectors.
-- Alignment on a real camera + recorder pair.
+Tested on the Mac (M4, 24 GB): English slide lectures through the full handbook route, and one 654-page textbook through ingestion and the digest. Not yet tested: Greek and mixed-language lectures, camera-filmed projectors, and alignment on a real camera and recorder pair. Known limits and test results are in [docs/system-design.md](docs/system-design.md) (section 18) and [docs/handbook-design.md](docs/handbook-design.md) (sections 10, 12 and 15).

@@ -43,10 +43,6 @@ class Session:
         return (self.video is not None and self.primary_audio is not None
                 and self.primary_audio != self.video)
 
-    @property
-    def is_video(self) -> bool:
-        return self.video is not None
-
 
 def estimate_quality(path: Path, work: Path) -> dict:
     """Rough signal-to-noise from loudness percentiles: speech peaks vs. the noise floor."""

@@ -13,6 +13,7 @@ import logging
 import shutil
 from pathlib import Path
 
+from .. import progress
 from ..config import session_config
 from ..contract import SourceRecord, SourceWriter, hash_many, make_id, stage
 from ..media import align as align_mod
@@ -98,6 +99,7 @@ class MediaSessionIngestor(Ingestor):
                 flags.append("video has no audio track; cannot align - transcript timestamps assume both start together")
             else:
                 fp = {"primary": sess.primary_audio.name, "video": sess.video.name, "cfg": cfg["alignment"]}
+                progress.stage("alignment")
                 d = _cached(work / "alignment.json", fp,
                             lambda: align_mod.align(sess.primary_audio, sess.video, work, cfg).to_dict())
                 mapping = align_mod.AlignmentMap.from_dict(d)
@@ -128,6 +130,7 @@ class MediaSessionIngestor(Ingestor):
                 s, prov, fl = transcribe(sess.primary_audio, work, cfg, language=language,
                                          glossary=sess.glossary, subtitles=sess.subtitles)
                 return {"segments": s, "provenance": prov, "flags": fl}
+            progress.stage("speech to text")
             tr = _cached(work / "transcript.json", fp, run_transcription)
             segs = map_segments(tr["segments"], mapping.map)
             pipeline["transcription"] = tr["provenance"]
@@ -140,6 +143,7 @@ class MediaSessionIngestor(Ingestor):
         kept, sel_stats, dedup_stats = [], {}, {}
         if sess.video:
             vc = cfg["video"]
+            progress.stage("frame extraction")
             frames = extract_frames(sess.video, work / "frames", float(vc["fps"]), vc.get("frame_format", "jpg"))
             cands, dedup_stats = group_frames(frames, vc)
             save_candidates(cands, dedup_stats, work / "candidates.json")
@@ -163,7 +167,8 @@ class MediaSessionIngestor(Ingestor):
 
             # OCR cross-check on every kept frame, at native resolution
             ocr_errors: set[str] = set()
-            for k in kept:
+            for n, k in enumerate(kept, 1):
+                progress.stage("OCR check", n, len(kept))
                 match_frame_to_text(k, cfg)
                 k.ocr = crosscheck(Path(k.frame), k.slide_text, cfg)
                 ocr_errors.update(k.ocr.get("errors", []))

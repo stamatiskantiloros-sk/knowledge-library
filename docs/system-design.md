@@ -139,7 +139,7 @@ It ends by writing `.work/last_run.json` with `new`, `updated`, `unchanged`, `fa
 knowlib reprocess --where transcription.model=small
 ```
 
-**Progress:** `progress.py` keeps `.work/progress.json` and logs at most one line every 30 seconds, with a time estimate for the current stage. `knowlib status` reads it.
+**Progress:** `progress.py` keeps `.work/progress.json` and a status line with a bar for each stage that can count its work (pages, frames, OCR checks, captions, digest parts), the time left in the stage and, after the first item, overall. Stages that cannot count (Docling conversion, speech to text, alignment, frame extraction) show how long they have run. In a terminal the line redraws in place; in a log file it is written every 30 seconds. `process`, `handbook` and `digest` report this way, and `knowlib status` reads the file from another shell.
 
 ## 8. Configuration
 
@@ -188,7 +188,7 @@ The session body is specified in section 11.8.
 
 All use `first_working()`, which tries backends in order and turns an import error or tool failure into a fallback. A fallback is itself recorded as a flag.
 
-**PDF.** Docling, then Marker or PyMuPDF. Then `_page_survey` checks every page: under 25 characters means no text layer; an image over 4% of the page or more than 40 drawings means a figure. Figure pages are rendered at 200 dpi into `assets/`, so charts remain available as images. Scanned pages are rendered too. If the backend's text is well above the text layer (more than 40 characters per scanned page), the backend's OCR is trusted and each page is flagged for checking. Otherwise knowlib OCRs them with Tesseract or a vision model.
+**PDF.** Docling, then Marker or PyMuPDF. Docling and PyMuPDF write the text page by page, each page starting with `<!-- page N (pdf M) -->`, where N is the number printed on the page (the PDF's page label) and M its place in the file, so notes can cite printed pages. Marker has no page markers. Docling leaves `<!-- formula-not-decoded -->` where it cannot read an equation; knowlib fills each gap with the PDF text layer inside the formula's box, in a ```` ```formula ```` block. The symbols survive but the layout does not, so a flag counts these formulas, and any gap the text layer cannot fill. Tables are written compact. `outline()` saves the PDF's bookmarks and its table and figure captions, with printed pages, to `assets/outline.json`. A caption is a line starting "Table 3.1" followed by nothing or a title in capitals. "Table 3.7 summarizes" and a sentence ending "Table 3.7." are mentions. A number that is only mentioned keeps its first mention's page, with no title. Then `_page_survey` checks every page: under 25 characters means no text layer; an image over 4% of the page or more than 40 drawings means a figure. Figure pages are rendered at 200 dpi into `assets/`, so charts remain available as images. Scanned pages are rendered too. If the backend's text is well above the text layer (more than 40 characters per scanned page), the backend's OCR is trusted and each page is flagged for checking. Otherwise knowlib OCRs them with Tesseract or a vision model.
 
 **Office.** Documents use Docling, then Pandoc, which also extracts embedded images. Presentations are written slide by slide with `python-pptx`, in the same shape as video slides: image (LibreOffice to PDF to PNG, if installed), slide text, tables and speaker notes.
 
@@ -366,11 +366,12 @@ knowlib stops at clean sources. `templates/CLAUDE.md` tells the agent what comes
 | `knowlib pending` | Sources not yet synthesized |
 | `knowlib mark-synthesized ID...` | Record synthesis |
 | `knowlib handbook` | Handbooks, with `--prepare`, `--finish`, `--input`, `--only`, `--output` |
+| `knowlib digest` | A finding aid per long PDF, with `--ids`, `--force`, `--reader session`, `--agent-model`, `--local-only`, `--set` |
 | `knowlib transcribe FILE` | Transcribe one file, for testing |
 
 ## 16. Tests
 
-`tests/test_pipeline.py` runs end to end on generated fixtures with the mock provider. `tests/test_units.py` covers individual rules: IDs, grouping, alignment, OCR comparison, selection, handbook checks and the session reader.
+`tests/test_pipeline.py` runs end to end on generated fixtures with the mock provider. `tests/test_units.py` covers individual rules: IDs, grouping, alignment, OCR comparison, selection, handbook checks and the session reader. `tests/test_books.py` covers long PDFs on a generated six-page book: printed page markers from both backends, formula text from its box, the outline and captions, chapter splitting, loop detection, a digest written through the session reader, and a looped part read again in pieces by the fallback model.
 
 ```bash
 .venv/bin/python -m pytest -q tests
@@ -402,6 +403,8 @@ Keep the decisions in section 2, the thresholds in section 11, and the prompts i
 - The session reader needs a person to start it, and has been tested on one short lecture.
 - Web pages with almost no content, and CSV files with an undetectable delimiter, fail ingestion.
 - Lectures in other languages and mixed languages have not been tested end to end.
+- Book digests have been tested on one 654-page textbook. The fast model loops on about a quarter of the parts, so a digest needs the fallback model and takes hours.
+- Formulas in PDFs keep their symbols but not their layout (fractions, sub- and superscripts).
 
 ## Appendix A: default configuration
 
@@ -475,6 +478,12 @@ frame_selection:
 handbook:
   language: English
   max_tokens: 6000
+digest:
+  min_pages: 100
+  max_chars: 120000
+  max_tokens: 8000
+  fallback_model: null
+  fallback_max_chars: 60000
 ocr_crosscheck:
   backends:
   - apple-vision
@@ -663,4 +672,29 @@ Passages:
 
 Almost every section needs nothing. Add a note only if the student cannot follow this section or the next one without something missing here that a passage states. Say nothing the next slide of the lecture will give anyway. Use only the passages and never mention them; quote only their exact words.
 Return JSON only: {{"note": null}} or {{"note": "<one or two sentences>", "passage": <number>}}
+```
+
+### Book digest, one part
+
+```text
+Below is {where} of the textbook "{title}". Each page begins with a line such as "=== Page 52 ===", the page number printed in the book; everything up to the next such line is on that page.
+
+Write a digest that a writer will use to find the right pages, not to replace them. Use only what the text says. End every item with the page it is on, read from the nearest "=== Page" line above it.
+
+Use exactly these headings:
+
+### Key terms
+- **Term** (p. N): what the book says it is, in one sentence close to its wording.
+
+### Formulas
+- **Name** (p. N): the formula as the book writes it, then what its symbols mean.
+
+### Worked examples
+- **Company or setting** (pp. N–M): what it shows and the main numbers it reaches.
+
+Leave out tables, figures and section headings: they are listed separately. Write "(none)" under a heading with nothing in it.
+
+Text:
+
+{text}
 ```
