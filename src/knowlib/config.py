@@ -80,7 +80,8 @@ DEFAULTS: dict[str, Any] = {
         "split": False,                      # separate requests to decide, transcribe and caption
         "transcribe_model": None,            # with split: overrides for the model that reads the frames
         "caption_model": None,               # with split: overrides for a slower model, e.g. {openai_model: ...}
-        "caption_model_types": ["table", "chart"],   # it captions these, Markdown tables and flagged slides
+        "caption_model_types": ["table", "chart"],   # it captions these, Markdown tables and flagged slides; or all
+        "memory_check": True,                # with manage_lms: stop if a model will not fit in free memory
     },
     "handbook": {                        # overrides of frame_selection for the writing model
         "language": "English",

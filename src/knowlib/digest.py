@@ -21,6 +21,7 @@ from .ingestors.pdf import PAGE_RE
 from .manifest import Manifest
 from .providers import get_vision_provider
 from .providers.agent import AgentPending, stop_if_waiting
+from .providers.openai_compat import NotEnoughMemory
 from .runner import open_library
 
 log = logging.getLogger("knowlib")
@@ -189,6 +190,8 @@ def digest_book(folder: Path, cfg: dict, provider, cache: Cache, fallback=None) 
                     got.append(ask(fallback, i, a, b))
                 except AgentPending:
                     pending += 1
+                except NotEnoughMemory:
+                    raise
                 except (OSError, RuntimeError) as e:   # could not load, or the server stalled
                     log.warning("rereading part %d failed (%s); keeping the first reply", i + 1, e)
                     break

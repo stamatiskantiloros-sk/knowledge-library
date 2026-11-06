@@ -200,6 +200,27 @@ def test_hard_slides_go_to_the_caption_model():
     assert wants_strong_caption(k("slide", "| a |\n| --- |\n| 1 |"), cfg)
     assert wants_strong_caption(k("demo", flag=True), cfg)
     assert not wants_strong_caption(k("slide"), cfg)
+    cfg["frame_selection"]["caption_model_types"] = "all"
+    assert wants_strong_caption(k("slide"), cfg)
+
+
+def test_a_model_that_does_not_fit_stops_before_loading(monkeypatch):
+    import subprocess
+    from knowlib.providers import openai_compat as oc
+
+    def fake_run(args, **kw):
+        out = {"ps": "[]", "ls": '[{"modelKey": "big", "sizeBytes": 14000000000}]'}.get(args[1], "")
+        return subprocess.CompletedProcess(args, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(oc.subprocess, "run", fake_run)
+    monkeypatch.setattr(oc, "available_bytes", lambda: 11_000_000_000)
+    monkeypatch.setattr(oc, "largest_processes", lambda n=3: "Browser 4.0 GB")
+    p = oc.OpenAICompatProvider({"openai_model": "big", "manage_lms": True})
+    with pytest.raises(oc.NotEnoughMemory, match="14.0 GB but only 11.0 GB.*Browser"):
+        p.generate([], "hi")
+    oc.OpenAICompatProvider({"openai_model": "small", "manage_lms": True})._check_memory()   # unknown size: no check
+    monkeypatch.setattr(oc, "available_bytes", lambda: 20_000_000_000)
+    p._check_memory()                                                                       # fits
 
 
 def test_slide_text_list_becomes_lines():

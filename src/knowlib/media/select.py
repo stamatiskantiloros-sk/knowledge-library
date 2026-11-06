@@ -26,6 +26,7 @@ from PIL import Image
 from .. import progress
 from ..providers import get_vision_provider, release_all
 from ..providers.agent import AgentPending
+from ..providers.openai_compat import NotEnoughMemory
 from .frames import Candidate, _small, resized_copy, tiles
 from .ocr import BACKENDS, crosscheck, normalize
 
@@ -231,6 +232,7 @@ def select(cands: list[Candidate], segs: list[dict], provider, cfg: dict, work: 
             best = _richest_sample(c.samples, cfg)
         if decision == "drop":
             stats["drop"] += 1
+            c.drop_reason = str(res.get("reason") or "")
             dropped.append(c)
             continue
 
@@ -259,6 +261,8 @@ def select(cands: list[Candidate], segs: list[dict], provider, cfg: dict, work: 
                     cache_path.write_text(json.dumps(cache, ensure_ascii=False))
                 except AgentPending:
                     pass
+                except NotEnoughMemory:
+                    raise
                 except (OSError, RuntimeError) as e:   # server gone, stalled, or lms could not load it
                     log.warning("transcription of %s failed (%s)", best.path.name, e)
                 stats["calls"] += 1
@@ -288,8 +292,11 @@ def select(cands: list[Candidate], segs: list[dict], provider, cfg: dict, work: 
 
 
 def wants_strong_caption(k: Kept, cfg: dict) -> bool:
-    """Tables, charts and slides the OCR check flagged are worth the slower caption model."""
+    """Tables, charts and slides the OCR check flagged are worth the slower caption model; with
+    caption_model_types: all, every slide is."""
     types = cfg["frame_selection"].get("caption_model_types", ["table", "chart"])
+    if types == "all":
+        return True
     return k.content_type in types or "|---" in k.slide_text.replace(" ", "") or bool(k.ocr.get("flag"))
 
 
@@ -322,6 +329,8 @@ def caption_kept(kept: list[Kept], segs: list[dict], cfg: dict, work: Path) -> d
                     cache[key] = provider.generate([Path(k.frame)], prompt).strip()
                 except AgentPending:
                     continue
+                except NotEnoughMemory:
+                    raise
                 except (OSError, RuntimeError) as e:   # server gone, or lms could not load it
                     log.warning("caption of %s failed (%s)", Path(k.frame).name, e)
                     failed.append(k)

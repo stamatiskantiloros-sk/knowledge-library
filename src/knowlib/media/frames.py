@@ -33,6 +33,7 @@ class Candidate:
     end: float
     frames: list[Frame] = field(default_factory=list)
     samples: list[Frame] = field(default_factory=list)
+    drop_reason: str = ""          # the model's reason, when it dropped this group
 
     def to_dict(self) -> dict:
         return {"index": self.index, "start": self.start, "end": self.end,

@@ -18,6 +18,37 @@ from .base import VisionProvider, image_b64
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
 
+class NotEnoughMemory(RuntimeError):
+    """A model does not fit in the memory the system can hand out. Callers that fall back to another
+    model on a RuntimeError let this one through, so the run stops and says why."""
+
+
+def available_bytes() -> int | None:
+    """Memory macOS can hand out without swapping: free, inactive, speculative and purgeable pages.
+    None where vm_stat is missing (not a Mac)."""
+    try:
+        out = subprocess.run(["vm_stat"], capture_output=True, text=True).stdout
+    except OSError:
+        return None
+    page = re.search(r"page size of (\d+)", out)
+    counts = [re.search(rf"Pages {k}:\s+(\d+)", out) for k in ("free", "inactive", "speculative", "purgeable")]
+    if not page or not all(counts):
+        return None
+    return int(page[1]) * sum(int(m[1]) for m in counts)
+
+
+def largest_processes(n: int = 3) -> str:
+    """'Brave Browser 2.1 GB, ...': the biggest memory users, for the message."""
+    out = subprocess.run(["ps", "-axo", "rss=,comm="], capture_output=True, text=True).stdout
+    by_app: dict[str, int] = {}
+    for line in out.splitlines():
+        rss, _, cmd = line.strip().partition(" ")
+        app = re.sub(r"\.app/.*", "", cmd).rsplit("/", 1)[-1]
+        by_app[app] = by_app.get(app, 0) + int(rss or 0) * 1024
+    top = sorted(by_app.items(), key=lambda kv: -kv[1])[:n]
+    return ", ".join(f"{app} {size / 1e9:.1f} GB" for app, size in top)
+
+
 class OpenAICompatProvider(VisionProvider):
     backend = "openai"
 
@@ -34,6 +65,7 @@ class OpenAICompatProvider(VisionProvider):
         self.context_length = section.get("context_length")   # with manage_lms
         self.parallel = section.get("parallel")                # slots share the memory; we send one at a time
         self.reasoning_effort = section.get("reasoning_effort")   # "none" skips the model's reasoning
+        self.memory_check = section.get("memory_check", True)     # with manage_lms: refuse a model that will not fit
         self._loaded = False
         self.last_finish = None
 
@@ -43,6 +75,27 @@ class OpenAICompatProvider(VisionProvider):
         if r.returncode != 0:
             raise RuntimeError(f"lms {args[0]} failed: {(r.stderr or r.stdout).strip()[-300:]}")
 
+    def _check_memory(self) -> None:
+        """Stop before loading a model that macOS would have to swap: it would run many times slower
+        and LM Studio drops a request after ten minutes without output."""
+        free = available_bytes()
+        if free is None:
+            return
+        lms = shutil.which("lms") or str(Path.home() / ".lmstudio/bin/lms")
+        loaded = subprocess.run([lms, "ps", "--json"], capture_output=True, text=True)
+        r = subprocess.run([lms, "ls", "--json"], capture_output=True, text=True)
+        try:
+            if any(self.model in (m.get("identifier"), m.get("modelKey")) for m in json.loads(loaded.stdout or "[]")):
+                return                                         # already in memory
+            size = next((m.get("sizeBytes") for m in json.loads(r.stdout) if m.get("modelKey") == self.model), None)
+        except ValueError:
+            return
+        if size and free < size:
+            raise NotEnoughMemory(
+                f"{self.model} needs about {size / 1e9:.1f} GB but only {free / 1e9:.1f} GB is free. "
+                f"Largest users: {largest_processes()}. Close what you can and run again, "
+                "or set memory_check: false to load it anyway (slowly, through swap).")
+
     def close(self) -> None:
         if self._loaded:
             self._lms("unload", self.model)
@@ -51,7 +104,9 @@ class OpenAICompatProvider(VisionProvider):
     def generate(self, images: list[Path], prompt: str, *, json_mode: bool = False,
                  max_tokens: int | None = None) -> str:
         if self.manage_lms and not self._loaded:
-            ctx = ["-c", str(self.context_length)] if self.context_length else []
+            if self.memory_check:
+                self._check_memory()
+            ctx =["-c", str(self.context_length)] if self.context_length else []
             ctx += ["--parallel", str(self.parallel)] if self.parallel else []
             self._lms("load", self.model, "-y", "--identifier", self.model, *ctx)
             self._loaded = True

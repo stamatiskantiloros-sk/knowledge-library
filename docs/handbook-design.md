@@ -64,7 +64,7 @@ Ingestion belongs to knowlib and knows nothing about handbooks. Its only contrac
 
 **Models.** An OpenAI-compatible local server (LM Studio here, at `http://localhost:1234/v1`) serves two vision models, and knowlib loads and unloads them with the `lms` CLI (`manage_lms: true`). One model is in memory at a time, so ordinary laptops can run it.
 
-- **Fast model:** decides keep or drop, and writes ordinary captions.
+- **Fast model:** decides keep or drop. Each dropped frame is listed at the end of `source.md` with a thumbnail and the model's reason.
 - **Strong model:** reads frames and captions the hard slides. Tested with a 16K context, `parallel: 1` and a 450 s timeout.
 
 Exact model ids live in `config.yaml`. Choose models by testing them on your own frames (section 12).
@@ -78,7 +78,7 @@ Exact model ids live in `config.yaml`. Choose models by testing them on your own
 5. Release the fast model. The strong model reads the richest sample of each kept group, chosen by OCR word count. A reply cut off by the token limit is discarded. A failed reading falls back to raw OCR, and the slide is marked `On slide (OCR)`.
 6. Code decides what supersedes what: a slide, code or whiteboard frame that keeps at least 90% of the previous frame's text replaces it. Then repeats are merged.
 7. OCR cross-check with Apple Vision and Tesseract. A slide is flagged only when both disagree with the model.
-8. Captions: the fast model for ordinary slides, the strong model for tables, charts, Markdown tables and flagged slides. A stalled the strong model falls back to the fast model.
+8. Captions: the strong model for every slide in the tested library (`caption_model_types: all`). The generic default gives it only tables, charts, Markdown tables and flagged slides, and the fast model the rest. A stalled strong model falls back to the fast model. Before the strong model loads, knowlib checks it fits in free memory and stops with the names of the largest apps if it does not.
 
 **Session reader (optional).** `knowlib process --reader session` replaces the strong model with subagents in a Claude Code session, with no API key. Frame decisions stay local. Reading then runs in passes: knowlib lists its jobs in `.work/agent/jobs.json` and stops, subagents write one answer file per job, and the next run continues. Sonnet reads tables, charts, code, whiteboards, diagrams and demos, Haiku reads the rest, and Sonnet writes the hard captions. On 11 test frames Sonnet matched or beat the strong local model, and Haiku missed one chart axis. On a real 3:42 lecture with 26 frame groups, reading and captions took a few minutes against an expected hour or more. It has been tested on that one lecture. It uses subscription limits and sends frames to Anthropic, so `local_only` refuses it.
 
@@ -221,6 +221,9 @@ Whole books are too long to pass to Opus for each lecture, and search alone can 
 - Qwopus reasoning: on half of chapter 10, thinking took 76% of the output (4,870 of 6,379 tokens) and 31 minutes. With `reasoning_effort: none` it took 15 minutes and gave 41 items, all on the right page, against 31.
 - Qwopus on a second, Linux machine over the network (Q4_K_M at 71K context) had not finished a whole part after an hour, so it is slower than the Mac for this model and is not used.
 - Every prompt names its part as "part X of N", so re-splitting the book changed every prompt and the cache missed: a rerun meant to take seconds took 2 h 56 min. A part's prompt now names only its chapter and pages, so re-splitting rereads only the parts that changed.
+- Same chapter, both models (chapter 3, pp. 52–86, where the 9B did not loop): the 9B listed 31 items, 28 on the cited page; Qwopus (whole part, reasoning off) listed 22, all on the cited page. Each found real concepts the other missed (the 9B: skewness, kurtosis, utility function, default spread; Qwopus: the covariance formula, Fama-French, investment grade). So the larger model is more exact but not more complete, and a digest is a finding aid, never a complete index. Whether smaller pieces find more was not settled.
+- Qwopus on the 24 GB Mac depends on free memory: with browsers and remote-desktop software open, only 5.4 of its 14 GB stayed resident, prompts that took 3 minutes took over 10, and LM Studio dropped the request after 600 s without data. A Qwopus stage needs a quiet machine.
+- A Qwopus-family 9B on the Linux machine ignored `reasoning_effort: none` and spent its whole budget (24,000 tokens) thinking without answering.
 
 ## 11. Privacy
 
@@ -269,7 +272,7 @@ Stages 1, 2 and 4 are local. Stage 3 and the digest send lecture text, frames an
 1. Install: `scripts/install-mac.sh`, or a Python 3.12 venv with `pip install -e .`, plus ffmpeg, tesseract, pandoc, Chrome, a local model server and ripgrep.
 2. `knowlib init <library>`, then set `config.yaml` as in section 4.
 3. Load the models in LM Studio under the exact ids in section 4.
-4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 49 pass).
+4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 50 pass).
 5. Run sections 6–8 on one short lecture and compare with its slides.
 
 To rebuild without knowlib, keep these in order of importance: the separation of reading and writing, the rules in section 7, the checks in section 8, and the `source.md` structure.

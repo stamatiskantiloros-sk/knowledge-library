@@ -153,7 +153,7 @@ def _between(block: str, start: str, ends: tuple[str, ...]) -> str:
 def parse_source(folder: Path, source_id: str = "", key: str = "") -> Lecture:
     raw = (folder / "source.md").read_text(encoding="utf-8")
     meta = yaml.safe_load(raw.split("---", 2)[1]) or {}
-    body = raw.split("---", 2)[2]
+    body = raw.split("---", 2)[2].split("\n## Dropped frames", 1)[0]   # not slides
     lecture = Lecture(source_id or folder.name, key, str(meta.get("title", folder.name)), folder)
     labels = ("**OCR text", "**Figure:**", "**Spoken:**")
     head, *blocks = re.split(r"^## Slide ", body, flags=re.M)

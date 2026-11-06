@@ -72,6 +72,12 @@ def test_session_slides(lib):
     assert 4 <= kept <= 5, kept                       # 5 slide states, speaker shot dropped
     assert fm["stats"]["selection"]["drop"] >= 1
     assert text.count("## Slide ") == kept
+    # the dropped speaker shot is listed with a thumbnail and the model's reason, and is not read as a slide
+    assert "## Dropped frames" in text and "![dropped](assets/dropped/drop_" in text
+    assert list((d / "assets" / "dropped").glob("drop_*.jpg"))
+    from knowlib.handbook.maker import parse_source
+    lecture = parse_source(d)
+    assert len(lecture.slides) == kept and "Dropped frames" not in lecture.slides[-1].spoken
     assert "WACC" in text and "**Spoken:**" in text and "**On slide:**" in text
     # frames stored at native resolution, model view capped at 1568 px
     full = Image.open(d / "assets" / "frame_001.jpg")

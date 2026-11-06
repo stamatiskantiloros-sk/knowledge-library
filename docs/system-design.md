@@ -275,7 +275,7 @@ A flag adds both OCR outputs to `source.md`, so a stronger reader can compare th
 
 ### 11.7 Captions
 
-Captions run last, from the final frame and checked text, with the same frame's transcript. The fast model captions ordinary slides. The strong model captions tables, charts, anything with a Markdown table, and flagged slides. A stalled strong model falls back to the fast one, and a slide no model captions gets a flag.
+Captions run last, from the final frame and checked text, with the same frame's transcript. The fast model captions ordinary slides, unless `caption_model_types: all` sends every slide to the strong model, as the tested library does so that every caption comes from one model. The strong model captions tables, charts, anything with a Markdown table, and flagged slides. A stalled strong model falls back to the fast one, and a slide no model captions gets a flag.
 
 Captions are descriptions for search, and may state inferences. They are never treated as evidence.
 
@@ -305,6 +305,8 @@ Captions are descriptions for search, and may state inferences. They are never t
 
 A slide's speech runs from its start to the next slide's start. Audio-only sessions become timestamped transcript sections of 5 minutes.
 
+**Dropped frames** come last, under `## Dropped frames`: each group the model dropped, with its time range, the model's reason and a 480 px thumbnail in `assets/dropped/`. A wrong drop is the one model error that otherwise leaves no trace. The handbook parser stops before this section.
+
 `assets/` holds `frame_NNN` at native resolution, `view/frame_NNN.jpg` at up to 1568 px for model reading, and `transcript.json` with all segments.
 
 **Cleanup:** after a successful write, decoded audio and full frames are deleted from `.work/`. Low-resolution copies of the samples stay in `archive/` there, along with the cached selection, so selection can be redone without the video.
@@ -322,7 +324,7 @@ A slide's speech runs from its start to the next slide's start. Audio-only sessi
 | `agent` | Subagents in a Claude Code session | No |
 | `mock` | Tests | Yes |
 
-With `manage_lms`, the `openai` provider loads and unloads models through the `lms` CLI, passing context length and parallel slots. Parallel slots share memory, and requests are sequential, so use one. It strips reasoning up to `</think>` and records `finish_reason`. A local timeout is required, because a stalled local server otherwise blocks a lecture for its full timeout.
+With `manage_lms`, the `openai` provider loads and unloads models through the `lms` CLI, passing context length and parallel slots. Parallel slots share memory, and requests are sequential, so use one. It strips reasoning up to `</think>` (and Gemma's `<thought>` blocks) and records `finish_reason`. Before loading, it compares the model's size from `lms ls` with the memory macOS can hand out without swapping (free, inactive, speculative and purgeable pages). A model that will not fit stops the run at once with `NotEnoughMemory`, naming the largest apps, instead of loading into swap: on the 24 GB Mac a 14 GB model with two browsers open ran several times slower and LM Studio dropped requests after 600 s without output. Callers that fall back to another model on a load error let this one through. `memory_check: false` turns it off, and a model already loaded is not checked. A local timeout is required, because a stalled local server otherwise blocks a lecture for its full timeout.
 
 `reasoning_effort: none` is available on this provider. In testing it kept the numbers on 10 of 11 frames and saved about a quarter of the reading time, with small losses of on-screen text. It is off by default.
 
@@ -475,6 +477,7 @@ frame_selection:
   caption_model_types:
   - table
   - chart
+  memory_check: true
 handbook:
   language: English
   max_tokens: 6000

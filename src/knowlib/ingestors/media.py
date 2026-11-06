@@ -140,7 +140,7 @@ class MediaSessionIngestor(Ingestor):
             flags.append("no audio: transcript missing")
 
         # ---- frames -------------------------------------------------------------------
-        kept, sel_stats, dedup_stats = [], {}, {}
+        kept, dropped, sel_stats, dedup_stats = [], [], {}, {}
         if sess.video:
             vc = cfg["video"]
             progress.stage("frame extraction")
@@ -205,7 +205,7 @@ class MediaSessionIngestor(Ingestor):
         # ---- write the source ----------------------------------------------------------
         w = SourceWriter(ctx.sources_dir, sid)
         try:
-            body = self._render(sess, segs, kept, w, cfg, flags, stats)
+            body = self._render(sess, segs, kept, w, cfg, flags, stats) + self._dropped(dropped, w)
             (w.asset_path("transcript.json")).write_text(
                 json.dumps(segs, ensure_ascii=False, indent=0), encoding="utf-8")
             if len(item.paths) > 1:
@@ -301,6 +301,20 @@ class MediaSessionIngestor(Ingestor):
             spoken = _paragraphs(segs, k.start, end)
             if spoken:
                 lines += ["", "**Spoken:**", "", *[p + "\n" for p in spoken]]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _dropped(dropped, w: SourceWriter) -> str:
+        """The frames the model judged empty, with a thumbnail and its reason, so a wrong drop can be seen."""
+        if not dropped:
+            return ""
+        lines = ["", "", "## Dropped frames", "",
+                 "The fast model judged these frames to have no content, so they are not slides above. "
+                 "If something seems missing from the lecture, check them.", ""]
+        for c in dropped:
+            thumb = resized_copy(c.samples[-1].path, w.asset_path(f"dropped/drop_{c.index:03d}.jpg"), 480)
+            reason = f": {c.drop_reason}" if c.drop_reason else ""
+            lines.append(f"- {fmt_ts(c.start)}–{fmt_ts(c.end)}{reason} ![dropped](assets/dropped/{thumb.name})")
         return "\n".join(lines)
 
     @staticmethod

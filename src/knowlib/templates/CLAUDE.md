@@ -24,7 +24,7 @@ Run `knowlib process -L .` (add `--local-only` if the user says the material is 
 
 Then read `.work/last_run.json`: `new`, `updated`, `failed`, `unsupported`, `renamed`, `flags`, `pending_synthesis`.
 
-- **failed**: report the error to the user. Common causes: a missing tool (`knowlib doctor` shows what is installed), a corrupt file, `local_only` blocking an API backend.
+- **failed**: report the error to the user. `NotEnoughMemory` means a model did not fit: tell the user which apps the message names to close, then run again. Other common causes: a missing tool (`knowlib doctor` shows what is installed), a corrupt file, `local_only` blocking an API backend.
 - **unsupported**: tell the user which files were skipped.
 - **renamed**: a source got a new id (e.g. its title changed). Update any citations of the old id in `notes/`.
 
@@ -35,7 +35,8 @@ Open each `sources/<id>/source.md` and check, in this order:
 2. **Documents**: garbled tables, missing headings, pages flagged as having no text layer, OCR text that is obviously wrong.
 3. **Transcripts**: read three passages (start, middle, end). Look for wrong language, nonsense words, misspelled domain terms, repeated lines. Misspelled terms → add them to the session's glossary (`session.yaml`) and to `glossary.md`, then `knowlib reprocess --ids <id>`.
 4. **Slides with an "OCR check" note**: open the full-resolution frame and read the text yourself. Do not trust the "On slide" text for those slides; use what the image shows when you write notes.
-5. **Alignment** (sessions with a separate recording): if flags mention low confidence or several segments, spot-check that "Spoken" text matches the slide it sits under.
+5. **Dropped frames** (lectures): glance at the thumbnails under `## Dropped frames` at the end. If one holds content (a slide, a table, code), tell the user: the model dropped something it should have kept.
+6. **Alignment** (sessions with a separate recording): if flags mention low confidence or several segments, spot-check that "Spoken" text matches the slide it sits under.
 
 Fix by reprocessing with a better backend where possible (edit `config.yaml` or the session's `session.yaml`, then `knowlib reprocess --ids <id>`). Do not hand-edit `source.md`: it is regenerated on reprocessing. Anything that cannot be fixed: leave the flag, log it in `notes/_qa-log.md` (date, source id, issue), and tell the user.
 

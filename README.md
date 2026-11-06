@@ -157,7 +157,7 @@ Adding a source type: write `ingestors/<name>.py` with an `@register`'d `Ingesto
 pip install -e ".[dev,docs]" && .venv/bin/python -m pytest -q tests
 ```
 
-The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 49 tests pass.
+The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 50 tests pass.
 
 ## 9. Status
 
