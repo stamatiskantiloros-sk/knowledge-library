@@ -94,9 +94,11 @@ DEFAULTS: dict[str, Any] = {
         "fallback_model": None,              # overrides for a stronger model that rereads a part the first one looped on
         "fallback_max_chars": 60000,         # it reads such a part in pieces this long
     },
-    "notes_review": {                    # a second model checks each note's claims against the cited passages
-        "backend": "agent",                  # a session subagent; review-notes --reader local uses caption_model
-        "agent_model": "sonnet",             # a different model from the writer, so their blind spots differ
+    "notes_review": {                    # a second model checks each note's claims against the cited passages.
+        # Overrides on top of frame_selection and its caption_model, so by default the strong local
+        # model reviews. Set openai_model (and context_length, reasoning_effort) for another local
+        # model, or backend: agent with agent_model: sonnet for a session subagent. Pick a model
+        # unlike the writer's, so they do not share blind spots.
         "max_tokens": 4000,
         "max_passage_chars": 8000,           # each cited passage is cut to this length
     },

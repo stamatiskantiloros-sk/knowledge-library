@@ -6,10 +6,11 @@ supported, partly (overstated, more general or more exact than the passages allo
 or unclear. One job per note; each cited passage is sent once. A different model is the point:
 it does not share the writer's blind spots.
 
-By default the reviewer is a session subagent (Sonnet), so a run stops after writing its jobs to
-.work/agent/jobs.json and the next run reads the answers. Claims citing a source ingested with
-local_only are never sent to the session; --reader local reviews everything with the local
-caption model instead. Replies are cached, so an unchanged note is not reviewed again.
+The reviewer is set in config.yaml under notes_review, on top of frame_selection and its
+caption_model: a local model in LM Studio by default, or a session subagent with backend: agent,
+in which case a run stops after writing its jobs to .work/agent/jobs.json and the next run reads
+the answers. Claims citing a source ingested with local_only are never sent off this machine.
+Replies are cached per reviewer model, so an unchanged note is not reviewed again.
 """
 from __future__ import annotations
 
@@ -58,7 +59,7 @@ def build(note, sources: dict, held: set[str], remote: bool, max_chars: int) -> 
             continue                                   # check-notes reports uncited claims
         if remote and (secret := sorted({s for s, _ in cites} & held)):
             skipped.append(Finding("review", "info", note.slug,
-                                   f"not reviewed: cites local_only {', '.join(secret)}; use --reader local: {text[:70]}"))
+                                   f"not reviewed: cites local_only {', '.join(secret)}; set a local notes_review model: {text[:70]}"))
             continue
         ids = []
         for sid, loc in cites:
@@ -79,17 +80,19 @@ def build(note, sources: dict, held: set[str], remote: bool, max_chars: int) -> 
     return REVIEW_PROMPT.format(passages=passage_block, claims=claim_block), texts, skipped
 
 
-def run(root: Path, *, reader: str = "session", note_slugs: list[str] | None = None,
-        overrides: dict | None = None) -> list[Finding]:
+def reviewer_section(cfg: dict) -> dict:
+    """frame_selection, then its caption_model (the strong local model), then notes_review."""
+    fs = cfg["frame_selection"]
+    return {**fs, **(fs.get("caption_model") or {}), **cfg["notes_review"]}
+
+
+def run(root: Path, *, note_slugs: list[str] | None = None, overrides: dict | None = None) -> list[Finding]:
     ctx, _ = open_library(root, overrides)
     cfg = ctx.config
     cfg.setdefault("agent_dir", str(ctx.work_dir / "agent"))
-    fs, nr = cfg["frame_selection"], cfg["notes_review"]
-    if reader == "local":
-        section = {**fs, **(fs.get("caption_model") or {}), "max_tokens": max(int(nr["max_tokens"]), 8000)}
-    else:
-        section = {**fs, **nr}
-    provider = get_vision_provider(section, cfg)      # refuses the session when the library is local_only
+    nr = cfg["notes_review"]
+    section = reviewer_section(cfg)
+    provider = get_vision_provider(section, cfg)      # refuses anything remote when the library is local_only
     remote = not getattr(provider, "is_local", True)
     held = {e["source_id"] for e in Manifest(ctx.root / "manifest.json").entries.values()
             if e.get("local_only") and e.get("source_id")}

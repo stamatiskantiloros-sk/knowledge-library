@@ -272,7 +272,7 @@ Stages 1, 2 and 4 are local. Stage 3 and the digest send lecture text, frames an
 1. Install: `scripts/install-mac.sh`, or a Python 3.12 venv with `pip install -e .`, plus ffmpeg, tesseract, pandoc, Chrome, a local model server and ripgrep.
 2. `knowlib init <library>`, then set `config.yaml` as in section 4.
 3. Load the models in LM Studio under the exact ids in section 4.
-4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 59 pass).
+4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 60 pass).
 5. Run sections 6–8 on one short lecture and compare with its slides.
 
 To rebuild without knowlib, keep these in order of importance: the separation of reading and writing, the rules in section 7, the checks in section 8, and the `source.md` structure.

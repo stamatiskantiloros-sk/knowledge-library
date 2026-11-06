@@ -208,10 +208,8 @@ def cmd_review_notes(args) -> int:
     from .providers.agent import AgentJobsWaiting
     root = _lib(args)
     overrides = deep_merge(parse_sets(args.set), {"local_only": True} if args.local_only else {})
-    if args.reader == "session":
-        overrides = deep_merge(overrides, {"notes_review": {"agent_model": args.agent_model}})
     try:
-        findings = notereview.run(root, reader=args.reader, note_slugs=args.notes or None, overrides=overrides)
+        findings = notereview.run(root, note_slugs=args.notes or None, overrides=overrides)
     except AgentJobsWaiting as e:
         print(f"waiting for {e}: answer .work/agent/jobs.json, then run this again")
         return 0
@@ -335,11 +333,8 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_check_notes)
     s = lib(sub.add_parser("review-notes", help="a second model judges every claim against its cited passages"))
     s.add_argument("--notes", nargs="*", default=[], help="only these note slugs")
-    s.add_argument("--reader", choices=["session", "local"], default="session",
-                   help="session: a Claude subagent (default); local: the caption model in LM Studio")
-    s.add_argument("--agent-model", default="sonnet", help="the subagent's model; pick one other than the writer's")
     s.add_argument("--local-only", action="store_true", help="refuse to send anything off this machine")
-    s.add_argument("--set", action="append", default=[], help="config override, e.g. notes_review.max_tokens=6000")
+    s.add_argument("--set", action="append", default=[], help="config override, e.g. notes_review.openai_model=google/gemma-4-12b")
     s.set_defaults(fn=cmd_review_notes)
     s = lib(sub.add_parser("reprocess"))
     s.add_argument("--where", action="append", default=[], help="provenance filter, e.g. transcription.model=small")

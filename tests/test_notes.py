@@ -155,8 +155,9 @@ def test_review_round_trip_through_the_session(library):
         "## Key points\n- Disney's WACC was 8.5% [@book, p. 53].\n"
         "- WACC is always the right discount rate for every project [@book, p. 53].\n"
         "- Beta measures market risk [@book, p. 52].\n", ["book"]))
+    session = {"notes_review": {"backend": "agent", "agent_model": "sonnet"}}
     with pytest.raises(AgentJobsWaiting):
-        notereview.run(library)
+        notereview.run(library, overrides=session)
     jobs = json.loads((library / ".work" / "agent" / "jobs.json").read_text())
     assert len(jobs) == 1 and jobs[0]["model"] == "sonnet"
     prompt = jobs[0]["prompt"]
@@ -166,10 +167,10 @@ def test_review_round_trip_through_the_session(library):
         {"n": 1, "verdict": "supported", "reason": "'WACC was 8.5% for Disney'"},
         {"n": 2, "verdict": "unsupported", "reason": "the passage says nothing about every project"},
         {"n": 3, "verdict": "partly", "reason": "'measures market risk' but nothing more"}]}))
-    found = notereview.run(library)
+    found = notereview.run(library, overrides=session)
     assert [f.level for f in found] == ["error", "warning"]
     assert "unsupported: WACC is always" in found[0].message and "every project" in found[0].message
-    assert notereview.run(library) == found                     # cached: no new jobs
+    assert notereview.run(library, overrides=session) == found  # cached: no new jobs
 
 
 def test_review_keeps_local_only_sources_on_the_machine(library):
@@ -179,10 +180,11 @@ def test_review_keeps_local_only_sources_on_the_machine(library):
     m["entries"]["book"]["local_only"] = True
     (library / "manifest.json").write_text(json.dumps(m))
     write(library, "wacc", note("wacc", "WACC", "## Key points\n- Disney's WACC was 8.5% [@book, p. 53].\n", ["book"]))
-    found = notereview.run(library)                             # nothing to send, so no job and no wait
+    session = {"notes_review": {"backend": "agent", "agent_model": "sonnet"}}
+    found = notereview.run(library, overrides=session)          # nothing to send, so no job and no wait
     assert len(found) == 1 and "not reviewed: cites local_only book" in found[0].message
     with pytest.raises(LocalOnlyViolation):
-        notereview.run(library, overrides={"local_only": True})
+        notereview.run(library, overrides={"local_only": True, **session})
 
 
 def test_local_only_sticks_in_the_manifest(tmp_path):
@@ -191,3 +193,16 @@ def test_local_only_sticks_in_the_manifest(tmp_path):
     m.record_success("a.pdf", content_hash="h", source_id="a", ingestor="pdf", pipeline={}, flags=[], local_only=True)
     m.record_success("a.pdf", content_hash="h2", source_id="a", ingestor="pdf", pipeline={}, flags=[])
     assert m.entries["a.pdf"]["local_only"] is True
+
+
+def test_reviewer_is_configured_like_any_model():
+    from knowlib.config import DEFAULTS, deep_merge
+    from knowlib.notereview import reviewer_section
+    cfg = deep_merge(DEFAULTS, {"frame_selection": {"backend": "openai", "openai_model": "fast",
+                                                    "caption_model": {"openai_model": "strong", "context_length": 16384}}})
+    s = reviewer_section(cfg)
+    assert s["openai_model"] == "strong" and s["backend"] == "openai"           # default: the strong local model
+    s = reviewer_section(deep_merge(cfg, {"notes_review": {"openai_model": "other-family", "context_length": 32768}}))
+    assert (s["openai_model"], s["context_length"]) == ("other-family", 32768)  # notes_review wins
+    s = reviewer_section(deep_merge(cfg, {"notes_review": {"backend": "agent", "agent_model": "sonnet"}}))
+    assert (s["backend"], s["agent_model"]) == ("agent", "sonnet")
