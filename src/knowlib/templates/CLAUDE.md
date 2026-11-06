@@ -44,6 +44,7 @@ Fix by reprocessing with a better backend where possible (edit `config.yaml` or 
 For each id from `knowlib pending`:
 
 1. Read the source. For lectures, read captions and slide text first; open frame images only where they matter (a chart, table, diagram or equation the caption points to, or an OCR-check slide). Images cost far more than text.
+   For a book, work from its digest (`sources/<id>/digest.md`; run `knowlib digest` first): take a chapter at a time, use its key terms, formulas and worked examples to pick topics, then read the cited pages in `source.md`. Never cite the digest.
 2. Decide which topics it contributes to. Prefer updating an existing note over creating a near-duplicate; check `index.md` and `notes/` first.
 3. Create or update `notes/<topic-slug>.md`:
 
@@ -72,7 +73,12 @@ For each id from `knowlib pending`:
 5. Keep numbers, formulas and definitions exact; copy them from the source (or the image), never from memory.
 6. Where sources contradict each other, record both under "Disagreements" with citations; do not silently pick one.
 7. Update `glossary.md` (term, definition, Greek/English equivalents, source) and `index.md` (topic → note, one line each; sources by course/project).
-8. Run `knowlib mark-synthesized <id> ...` for the sources you finished.
+8. Run `knowlib check-notes -L .` and work through what it prints:
+   - **errors** (a citation to a missing source, page, slide or section; a broken `[[link]]`; a source marked synthesized that no note cites): fix them all.
+   - **warnings**: a number or quotation not found at the cited place (it may say which page it is on instead), a claim with no citation, a possible duplicate note, `sources:` not matching the citations, a note missing from `index.md`, a note older than a source it cites. Fix each, or leave it only when you checked and it is right (for example a figure you calculated from the cited numbers: say so in the note).
+   - **leads** ("also discussed in, not cited"): sources that talk about the note's topic. Read those passages and merge what they add, with citations, or decide they add nothing.
+   Duplicates: merge them into one note under the clearer name, move the other names into `aliases`, combine `sources`, repoint every `[[link]]` and `index.md`, then delete the other file.
+9. Run `knowlib mark-synthesized <id> ...` for the sources you finished, once `check-notes` shows no errors.
 
 Notes are written in English unless the user asks otherwise; keep original Greek terms next to their English equivalents where it helps.
 

@@ -7,6 +7,7 @@
   knowlib handbook --output DIR      one book per lecture, from --input or the inbox
   knowlib digest [-L DIR]            a finding aid per long PDF (book), for handbooks that cite it
   knowlib qa [-L DIR]                every flag across sources, for the QA pass
+  knowlib check-notes [-L DIR]       citations, duplicates and consolidation of the topic notes
   knowlib reprocess --where K=V      mark matching sources stale and re-ingest them
   knowlib pending [-L DIR]           source ids not yet synthesized into notes
   knowlib mark-synthesized ID...     record that sources were synthesized
@@ -192,6 +193,14 @@ def cmd_qa(args) -> int:
     return 0
 
 
+def cmd_check_notes(args) -> int:
+    from . import notecheck
+    root = _lib(args)
+    findings = notecheck.run(root, only=args.only or None, note_slugs=args.notes or None)
+    print(notecheck.report(findings, len(notecheck.load_notes(root / "notes"))))
+    return 1 if any(f.level == "error" for f in findings) else 0
+
+
 def cmd_reprocess(args) -> int:
     from .manifest import Manifest
     from .runner import process
@@ -302,6 +311,10 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_digest)
     lib(sub.add_parser("status")).set_defaults(fn=cmd_status)
     lib(sub.add_parser("qa")).set_defaults(fn=cmd_qa)
+    s = lib(sub.add_parser("check-notes", help="citations, duplicates and consolidation of the topic notes"))
+    s.add_argument("--only", nargs="*", choices=["citations", "duplicates", "consolidation"], default=[])
+    s.add_argument("--notes", nargs="*", default=[], help="only these note slugs")
+    s.set_defaults(fn=cmd_check_notes)
     s = lib(sub.add_parser("reprocess"))
     s.add_argument("--where", action="append", default=[], help="provenance filter, e.g. transcription.model=small")
     s.add_argument("--ids", nargs="*", default=[])

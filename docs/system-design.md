@@ -347,7 +347,8 @@ Haiku reads ordinary frames. Sonnet reads `table`, `chart`, `code`, `whiteboard`
 knowlib stops at clean sources. `templates/CLAUDE.md` tells the agent what comes next.
 
 1. **QA.** Read `last_run.json`, the flags, three transcript passages, and every image a flag names. Fix through config and reprocessing, never by editing `source.md`.
-2. **Synthesize.** Write topic notes in `notes/` with a citation on every claim, in the form `[@<source-id>, slide 12, 14:32]`. Record disagreements instead of picking a side. Update `index.md` and `glossary.md`, then `knowlib mark-synthesized`.
+2. **Synthesize.** Write topic notes in `notes/` with a citation on every claim, in the form `[@<source-id>, slide 12, 14:32]`. Record disagreements instead of picking a side. A book is synthesized from its digest, a chapter at a time, reading only the pages the digest points to. Update `index.md` and `glossary.md`, run `knowlib check-notes`, then `knowlib mark-synthesized`.
+   **Checks on notes** (`notecheck.py`). Notes are where sources merge, one note per concept, and nothing generates them by code, so three checks keep them honest. *Citations:* the source exists; the page (from the page markers), slide (with its time range), passage time or section exists; and the claim's numbers (compared as values, so 8.5% matches 8.50 and 1,000 matches 1000; whole numbers under 10 are skipped) and quotations of four words or more appear there. A miss names the neighbouring page if the text is there. Claims of four words or more with no citation are listed; the summary before the first `##` heading is not checked. A claim citing several sources is checked for its places only. *Duplicates:* notes sharing a title or alias after normalisation, notes sharing half their citations, notes with 60% of their wording in common, and claims written in two notes. *Consolidation:* every source marked synthesized is cited; `sources:` matches the citations; every note is in `index.md`; `[[links]]` resolve; a note older than a reprocessed source it cites; and sources that mention the note's title or aliases three times or more without being cited, the leads where another book or deck has not been merged in. HTML comments are ignored. The command exits with 1 on errors and writes `.work/notes_check.json`.
 3. **Research.** Answer from notes, drilling into sources with `rg`, and keep sources separate from reasoning.
 4. **Handbook.** See [handbook-design.md](handbook-design.md).
 
@@ -364,6 +365,7 @@ knowlib stops at clean sources. `templates/CLAUDE.md` tells the agent what comes
 | `knowlib process` | Ingest new or changed material. Flags: `--input`, `--layout`, `--only`, `--force`, `--dry-run`, `--limit`, `--local-only`, `--set`, `--reader` |
 | `knowlib status` | Counts, failures and live progress |
 | `knowlib qa` | All flags across sources |
+| `knowlib check-notes` | Citations, duplicates and consolidation of the notes, with `--only` and `--notes` |
 | `knowlib reprocess` | Mark matching sources stale and re-ingest, with `--where` or `--ids` |
 | `knowlib pending` | Sources not yet synthesized |
 | `knowlib mark-synthesized ID...` | Record synthesis |
@@ -373,7 +375,7 @@ knowlib stops at clean sources. `templates/CLAUDE.md` tells the agent what comes
 
 ## 16. Tests
 
-`tests/test_pipeline.py` runs end to end on generated fixtures with the mock provider. `tests/test_units.py` covers individual rules: IDs, grouping, alignment, OCR comparison, selection, handbook checks and the session reader. `tests/test_books.py` covers long PDFs on a generated six-page book: printed page markers from both backends, formula text from its box, the outline and captions, chapter splitting, loop detection, a digest written through the session reader, and a looped part read again in pieces by the fallback model.
+`tests/test_pipeline.py` runs end to end on generated fixtures with the mock provider. `tests/test_units.py` covers individual rules: IDs, grouping, alignment, OCR comparison, selection, handbook checks and the session reader. `tests/test_books.py` covers long PDFs on a generated six-page book: printed page markers from both backends, formula text from its box, the outline and captions, chapter splitting, loop detection, a digest written through the session reader, and a looped part read again in pieces by the fallback model. `tests/test_notes.py` builds a three-source library by hand and plants each problem the note checks look for, and checks that correct notes pass.
 
 ```bash
 .venv/bin/python -m pytest -q tests
