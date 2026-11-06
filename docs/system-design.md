@@ -54,6 +54,33 @@ These rules explain most of the decisions below.
 
 ## 4. The library on disk
 
+There are two layouts, chosen at setup and recorded as `library.mode`. Everything that needs a source's files asks `layout.py`, so ingestion, checks, digests and handbooks work the same in both, and notes cite the same stable ids.
+
+**In place** (`mode: inplace`, the default for a folder that already holds material). The library is the user's own folder, used as it is. knowlib crawls every subfolder and writes each source's Markdown beside its original, named after the whole file name so it never collides with the user's own `.md` files:
+
+```
+<your folder>/
+  Ballas/inventory.pdf            the user's originals, never edited, moved or deleted
+  Ballas/inventory.pdf.md         its ingested text, frontmatter `generated_by: knowlib`
+  Lecture 3/Lecture 3.lecture.md  a lecture folder (video and audio): the lecture, slide by slide
+  textbook.pdf.digest.md          a long book's finding aid
+  notes/                          synthesized topic notes, written by the agent
+  INDEX.md                        topics (the agent) and the sources table (knowlib, between markers)
+  glossary.md                     terms and names, kept by the agent
+  AGENTS.md                       procedures for any agent; CLAUDE.md imports it
+  .ignore                         tells rg to skip _knowlib's images and caches
+  _knowlib/                       knowlib's own files, visible on purpose
+    config.yaml                   the setup answers
+    manifest.json                 what was processed, how, where its Markdown is, whether synthesized
+    sources.jsonl                 one line per source: id, title, type, size, Markdown path, digest, flags
+    assets/<id>/                  frames, page renders and outline.json; image links point here
+    work/                         caches and reports; safe to delete
+```
+
+The crawler skips `_knowlib/`, `notes/`, the agent files at the top and any Markdown carrying `generated_by: knowlib`, so a second run never ingests its own output. Image links are written relative to wherever the Markdown sits (`../../_knowlib/assets/<id>/page_001.png` two folders down). The manifest stores each source's output path, so finding a source from its id never involves guessing. A scanned page with no text layer and no OCR text keeps its image in the Markdown, so it is never silently lost.
+
+**Separate** (`mode: separate`, the original layout, used by the tested DP-100 library). Originals go in `inbox/` and each source gets its own folder:
+
 ```
 <library>/
   inbox/          originals; never edited, can hold symlinks to folders elsewhere
@@ -72,7 +99,11 @@ These rules explain most of the decisions below.
     agent/        session reader jobs and answers
 ```
 
-`knowlib init <dir>` creates this from `templates/`. Its `.gitignore` excludes `.work/`, `archive/` and `inbox/`, so a library can be its own repository of text.
+Its `.gitignore` excludes `.work/`, `archive/` and `inbox/`, so a library can be its own repository of text.
+
+**Setup** (`setup.py`). `knowlib init <dir>` asks a few questions, each with a default: in place or separate (in place when the folder already holds material); which folders or name patterns to leave out, after showing how many files per top-level folder knowlib can read; whether the material is confidential (`local_only`); the language; and, from the models LM Studio has downloaded, a fast model, a strong model and a note reviewer, ideally of another family. Every answer has a flag (`--mode`, `--skip`, `--local-only`, `--language`, `--fast-model`, `--strong-model`, `--reviewer-model`) and `--yes` accepts the defaults, so an agent can run setup without questions. Only the answers go into the config, under a header naming the date; everything else keeps the built-in default (Appendix A), and `config.example.yaml` is copied beside it for reference. A previous config is kept as `config.yaml.bak`. `knowlib process` on a folder that was never set up offers setup at a terminal and otherwise says to run `knowlib init`, rather than creating `inbox/` there.
+
+**Files for agents.** Setup writes the procedures from one template, filled in for the layout (`AGENTS.md` and a `CLAUDE.md` that imports it in place; `CLAUDE.md` in a separate library), plus the index and glossary; it never overwrites them once written. After every `process` and `mark-synthesized`, knowlib rewrites the sources table between `<!-- knowlib:sources -->` markers in the index (id, title, type, size, a link to the Markdown, flags, synthesized) and `sources.jsonl`, so an agent goes from a cited id to its file in one lookup. Each generated Markdown starts with a contents list of its headings, each with its page when the text has page markers, when there are between 3 and 80.
 
 ## 5. Identity and change detection
 

@@ -64,12 +64,13 @@ def _is_url_list(f: Path) -> bool:
     return f.suffix.lower() in URL_EXT or f.name.lower() == "urls.txt" or f.name.lower().endswith(".urls.txt")
 
 
-def discover(inbox: Path, ignore: list[str] | None = None) -> list[InputItem]:
+def discover(inbox: Path, ignore: list[str] | None = None, skip=None) -> list[InputItem]:
+    """skip: an optional predicate for paths the caller owns (a library in place skips its own files)."""
     inbox = Path(inbox)
     ignore = list(ignore or [])
 
     def skipped(p: Path) -> bool:
-        return any(fnmatch.fnmatch(p.name, pat) for pat in ignore)
+        return any(fnmatch.fnmatch(p.name, pat) for pat in ignore) or bool(skip and skip(p))
     files_first: list[InputItem] = []
     sessions: list[InputItem] = []
     urls: list[InputItem] = []

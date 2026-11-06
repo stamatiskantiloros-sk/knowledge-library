@@ -146,13 +146,12 @@ def merge(replies: list[str]) -> str:
     return "\n\n".join(f"{h}\n" + ("\n".join(items) or "(none)") for h, items in heads.items())
 
 
-def digest_book(folder: Path, cfg: dict, provider, cache: Cache, fallback=None) -> tuple[str | None, int]:
+def digest_book(source_md: Path, assets: Path, cfg: dict, provider, cache: Cache, fallback=None) -> tuple[str | None, int]:
     """(digest text, pending jobs). The text is None while session jobs are still unanswered.
     A part the provider repeats itself on is read again by the fallback provider, in smaller pieces,
     once the provider has finished the whole book, so the two models are never loaded together."""
-    source_md = folder / "source.md"
     fm = read_frontmatter(source_md)
-    book = json.loads((folder / "assets" / "outline.json").read_text(encoding="utf-8"))
+    book = json.loads((assets / "outline.json").read_text(encoding="utf-8"))
     pg = pages(source_md)
     dc = cfg["digest"]
     page_chars = {p: len(t) for p, (_, t) in pg.items()}
@@ -206,7 +205,7 @@ def digest_book(folder: Path, cfg: dict, provider, cache: Cache, fallback=None) 
     by = f"{provider.model} one part at a time"
     if reread:
         by += f"; the {len(reread)} parts it repeated itself on were read again by {fallback.model}"
-    out = ["# Digest: " + fm.get("title", folder.name), "",
+    out = ["# Digest: " + fm.get("title", source_md.stem), "",
            f"A finding aid for this book. Find the pages here, then read them in `{source_md}`, where each "
            "page starts with `<!-- page N (pdf M) -->`; cite the book and its page, never this digest. The contents "
            f"and the tables and figures come from the PDF itself. The rest was written by {by}; its pages can be "
@@ -230,13 +229,14 @@ def digest_book(folder: Path, cfg: dict, provider, cache: Cache, fallback=None) 
     return "\n".join(out) + "\n", 0
 
 
-def is_book(folder: Path, min_pages: int) -> bool:
-    fm = read_frontmatter(folder / "source.md")
-    return (folder / "assets" / "outline.json").exists() and int((fm.get("stats") or {}).get("pages", 0)) >= min_pages
+def is_book(source_md: Path, assets: Path, min_pages: int) -> bool:
+    fm = read_frontmatter(source_md)
+    return (assets / "outline.json").exists() and int((fm.get("stats") or {}).get("pages", 0)) >= min_pages
 
 
 def run(root: Path, *, ids: list[str] | None = None, force: bool = False, overrides: dict | None = None) -> list[dict]:
-    """Write sources/<id>/digest.md for each book whose digest is missing or older than its source."""
+    """Write each book's digest (sources/<id>/digest.md, or <file>.digest.md beside it in place)
+    when it is missing or older than its source."""
     ctx, _ = open_library(root, overrides)
     cfg = ctx.config
     cfg.setdefault("agent_dir", str(ctx.work_dir / "agent"))
@@ -244,29 +244,31 @@ def run(root: Path, *, ids: list[str] | None = None, force: bool = False, overri
     provider = get_vision_provider({**cfg["frame_selection"], **dc}, cfg)
     fallback = get_vision_provider({**cfg["frame_selection"], **dc, **dc["fallback_model"]}, cfg) \
         if dc.get("fallback_model") else None
-    entries = Manifest(ctx.root / "manifest.json").entries
-    folders = sorted({ctx.sources_dir / e["source_id"] for e in entries.values()
-                      if e.get("status") == "done" and e.get("source_id") and (not ids or e["source_id"] in ids)})
-    books = [f for f in folders if (f / "source.md").exists() and is_book(f, int(dc["min_pages"]))]
+    lay = ctx.layout
+    entries = {e["source_id"]: e for e in Manifest(lay.manifest).entries.values() if e.get("source_id")}
+    books = [(sid, md) for sid, md in sorted(lay.all_sources(Manifest(lay.manifest).entries).items())
+             if (not ids or sid in ids) and is_book(md, lay.assets_dir(sid), int(dc["min_pages"]))]
     results = []
     progress.start(ctx.work_dir, len(books))
     try:
-        for n, folder in enumerate(books, 1):
-            progress.item(n, f"digest: {folder.name}")
-            digest = folder / "digest.md"
-            source_hash = hashlib.sha256((folder / "source.md").read_bytes()).hexdigest()[:16]
+        for n, (sid, md) in enumerate(books, 1):
+            progress.item(n, f"digest: {sid}")
+            digest = lay.digest_md(sid, entries.get(sid))
+            source_hash = hashlib.sha256(md.read_bytes()).hexdigest()[:16]
             if digest.exists() and not force and f"source_hash: {source_hash}" in digest.read_text(encoding="utf-8")[:400]:
-                results.append({"source": folder.name, "status": "current", "digest": str(digest)})
+                results.append({"source": sid, "status": "current", "digest": str(digest)})
                 continue
             (ctx.work_dir / "digest").mkdir(parents=True, exist_ok=True)
-            text, pending = digest_book(folder, cfg, provider, Cache(ctx.work_dir / "digest" / f"{folder.name}.json"),
-                                        fallback)
+            text, pending = digest_book(md, lay.assets_dir(sid), cfg, provider,
+                                        Cache(ctx.work_dir / "digest" / f"{sid}.json"), fallback)
             if text is None:
-                results.append({"source": folder.name, "status": "waiting", "pending": pending})
+                results.append({"source": sid, "status": "waiting", "pending": pending})
                 continue
-            head = f"---\nsource: {folder.name}\nsource_hash: {source_hash}\nmodel: {provider.model}\nwritten: {now_iso()}\n---\n\n"
+            # generated_by keeps a digest beside its book out of the crawl in a library in place
+            head = (f"---\nsource: {sid}\nsource_hash: {source_hash}\nmodel: {provider.model}\nwritten: {now_iso()}\n"
+                    f"generated_by: knowlib\n---\n\n")
             digest.write_text(head + text, encoding="utf-8")
-            results.append({"source": folder.name, "status": "written", "digest": str(digest)})
+            results.append({"source": sid, "status": "written", "digest": str(digest)})
             progress.item_done()
     finally:
         progress.finish()

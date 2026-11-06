@@ -1,6 +1,6 @@
 """Handbooks: one book per lecture, written in the order the lecture was taught.
 
-It reads only finished sources/<id>/source.md files, so ingestion stays the job of the rest of
+It reads only finished source Markdown (sources/<id>/source.md, or <file>.md beside it in place), so ingestion stays the job of the rest of
 knowlib. The lecture sets the content: each section is written from its own slides alone. Course
 materials reach the book only as a checked note added afterwards, because a course PDF can hold the
 lecture's whole worked example and the writer then runs ahead of the section. A number in the text
@@ -150,8 +150,13 @@ def _between(block: str, start: str, ends: tuple[str, ...]) -> str:
     return (body[:min(cuts)] if cuts else body).strip()
 
 
-def parse_source(folder: Path, source_id: str = "", key: str = "") -> Lecture:
-    raw = (folder / "source.md").read_text(encoding="utf-8")
+def parse_source(path: Path, source_id: str = "", key: str = "") -> Lecture:
+    """path: the lecture's Markdown, or (separate mode) its sources/<id>/ folder. Frame paths in
+    the Markdown are relative to its folder, in both layouts."""
+    path = Path(path)
+    md = path if path.suffix == ".md" else path / "source.md"
+    folder = md.parent
+    raw = md.read_text(encoding="utf-8")
     meta = yaml.safe_load(raw.split("---", 2)[1]) or {}
     body = raw.split("---", 2)[2].split("\n## Dropped frames", 1)[0]   # not slides
     lecture = Lecture(source_id or folder.name, key, str(meta.get("title", folder.name)), folder)
@@ -404,20 +409,20 @@ def _select(root: Path, input_dir: Path | None, only: list[str] | None):
     overrides = {"library": {"inbox": str(input_dir)}} if input_dir else None
     process(root, only_lectures=only, overrides=overrides)   # course materials are always ingested
     ctx, _ = open_library(root, overrides)
-    entries = Manifest(ctx.root / "manifest.json").entries
+    entries = Manifest(ctx.layout.manifest).entries
     prefix = f"{input_dir.name}/" if input_dir else ""
     mine = {k: e for k, e in entries.items() if e.get("status") == "done" and k.startswith(prefix)}
     lectures, materials = [], []
     for key, e in sorted(mine.items(), key=lambda kv: lecture_order(kv[0])):
-        folder = ctx.sources_dir / e.get("source_id", "")
-        if not (folder / "source.md").exists():
+        md = ctx.layout.source_md(e.get("source_id", ""), e)
+        if not md.exists():
             continue
         if e.get("ingestor") == "media":
             if not only or any(o.casefold() in key.casefold() for o in only):
-                lectures.append((key, e, folder))
+                lectures.append((key, e, md))
         else:
-            text = (folder / "source.md").read_text(encoding="utf-8").split("---", 2)[-1]
-            materials.append((key, text, e["source_id"]))
+            text = md.read_text(encoding="utf-8").split("---", 2)[-1]
+            materials.append((key, text, e["source_id"], md, ctx.layout.digest_md(e["source_id"], e)))
     if not lectures:
         raise SystemExit(f"no processed lecture matches {only}" if only else "no processed lectures")
     return ctx, lectures, materials
@@ -429,9 +434,9 @@ def make(root: Path, output: Path, *, input_dir: Path | None = None, only: list[
     provider = get_vision_provider({**ctx.config["frame_selection"], **ctx.config["handbook"]}, ctx.config)
     progress.start(ctx.work_dir, len(lectures))
     results = []
-    for n, (key, e, folder) in enumerate(lectures, 1):
+    for n, (key, e, md) in enumerate(lectures, 1):
         progress.item(n, f"handbook: {key}")
-        lecture = parse_source(folder, e["source_id"], key)
+        lecture = parse_source(md, e["source_id"], key)
         results.append(write_lecture(lecture, [m[:2] for m in materials], provider, ctx.config, Path(output) / slugify(lecture.title)))
         progress.item_done()
     release_all()
@@ -443,11 +448,11 @@ def prepare(root: Path, output: Path, *, input_dir: Path | None = None, only: li
     """Write a brief per lecture for an agent to write the book from, instead of a local model."""
     _, lectures, materials = _select(root, input_dir, only)
     briefs = []
-    for key, e, folder in lectures:
-        lecture = parse_source(folder, e["source_id"], key)
+    for key, e, md in lectures:
+        lecture = parse_source(md, e["source_id"], key)
         out = Path(output) / slugify(lecture.title)
         out.mkdir(parents=True, exist_ok=True)
-        (out / ".lecture.json").write_text(json.dumps({"folder": str(folder), "source_id": e["source_id"], "key": key}))
+        (out / ".lecture.json").write_text(json.dumps({"folder": str(md), "source_id": e["source_id"], "key": key}))
         (out / "brief.md").write_text(brief(lecture, materials), encoding="utf-8")
         briefs.append(str(out / "brief.md"))
     return briefs
@@ -468,11 +473,9 @@ def brief(lecture: Lecture, materials: list[tuple[str, str]]) -> str:
     lines += ["## Course-material passages", ""]
     lines += [f"From {t}:\n{c}\n" for t, c in passages] or ["None."]
     lines += ["## All course materials", "", "Search these with `rg -i \"<term>\" <path>`.", ""]
-    for t, _, sid in materials:
-        folder = lecture.folder.parent / sid
-        digest = folder / "digest.md"
-        lines.append(f"- {t}: {folder / 'source.md'}" + (f"\n  Digest (find pages here, then read and cite the book): {digest}"
-                                                           if digest.exists() else ""))
+    for t, _, sid, md, digest in materials:
+        lines.append(f"- {t} [@{sid}]: {md}" + (f"\n  Digest (find pages here, then read and cite the book): {digest}"
+                                               if digest.exists() else ""))
     if not materials:
         lines.append("None.")
     return "\n".join(lines) + "\n"

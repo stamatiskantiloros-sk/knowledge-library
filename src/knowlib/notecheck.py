@@ -135,11 +135,14 @@ def claims(note: Note) -> list[tuple[str, str]]:
 
 
 class Source:
-    """One source.md, cut into the places a citation can point to."""
+    """One source's Markdown, cut into the places a citation can point to. path is the Markdown
+    file, or (separate mode, and the tests) its sources/<id>/ folder."""
 
-    def __init__(self, folder: Path):
-        self.id = folder.name
-        raw = (folder / "source.md").read_text(encoding="utf-8")
+    def __init__(self, path: Path, source_id: str | None = None):
+        path = Path(path)
+        md = path if path.suffix == ".md" else path / "source.md"
+        self.id = source_id or (md.parent.name if md.name == "source.md" else md.stem)
+        raw = md.read_text(encoding="utf-8")
         self.text = raw.split("\n---\n", 1)[-1]
         parts = PAGE_RE.split(self.text)
         self.pages = {parts[i]: parts[i + 2] for i in range(1, len(parts) - 2, 3)}
@@ -285,12 +288,14 @@ def check_duplicates(notes: list[Note]) -> list[Finding]:
     return out
 
 
-def check_consolidation(root: Path, notes: list[Note], sources: dict[str, Source], manifest: Manifest) -> list[Finding]:
+def check_consolidation(root: Path, notes: list[Note], sources: dict[str, Source], manifest: Manifest,
+                        index_path: Path | None = None) -> list[Finding]:
     out = []
     slugs = {n.slug for n in notes}
     cited_anywhere: set[str] = set()
     entries = {e["source_id"]: e for e in manifest.entries.values() if e.get("source_id")}
-    index = COMMENT.sub("", (root / "index.md").read_text(encoding="utf-8")) if (root / "index.md").exists() else ""
+    index_path = index_path or root / "index.md"
+    index = COMMENT.sub("", index_path.read_text(encoding="utf-8")) if index_path.exists() else ""
     for note in notes:
         body_ids = {sid for _, t in claims(note) for sid, _ in citations(t)}
         cited_anywhere |= body_ids
@@ -302,7 +307,7 @@ def check_consolidation(root: Path, notes: list[Note], sources: dict[str, Source
             out.append(Finding("consolidation", "warning", note.slug,
                                f"listed in sources but never cited: {', '.join(sorted(listed - body_ids))}"))
         if f"[[{note.slug}]]" not in index and f"notes/{note.slug}.md" not in index:
-            out.append(Finding("consolidation", "warning", note.slug, "not in index.md"))
+            out.append(Finding("consolidation", "warning", note.slug, f"not in {index_path.name}"))
         for link in sorted({x.strip() for x in LINK.findall(note.body)} - slugs):
             out.append(Finding("consolidation", "error", note.slug, f"[[{link}]] has no note"))
         updated = str(note.meta.get("updated") or "")
@@ -312,17 +317,24 @@ def check_consolidation(root: Path, notes: list[Note], sources: dict[str, Source
                 out.append(Finding("consolidation", "warning", note.slug,
                                    f"{sid} was reprocessed on {changed}, after this note ({updated}): recheck its citations"))
         # the merge check: who else discusses this concept and is not cited here
+        # each term is counted on its own, so a lead shows what matched: a generic alias
+        # ("average cost" inside "weighted average cost of capital") is then easy to dismiss
         terms = sorted({norm(x) for x in note.names if len(x) >= 4})
-        pattern = re.compile("|".join(rf"\b{re.escape(t)}\b" for t in terms)) if terms else None
-        if pattern:
-            hits = sorted(((len(pattern.findall(s.normed)), sid) for sid, s in sources.items() if sid not in body_ids),
-                          reverse=True)
-            hits = [(n, sid) for n, sid in hits if n >= 3][:5]
-            if hits:
-                out.append(Finding("consolidation", "info", note.slug, "also discussed in, not cited: "
-                                   + ", ".join(f"{sid} ({n}×)" for n, sid in hits)))
+        hits = []
+        for sid, s in sources.items():
+            if sid in body_ids:
+                continue
+            counts = {t: len(re.findall(rf"\b{re.escape(t)}\b", s.normed)) for t in terms}
+            counts = {t: n for t, n in counts.items() if n}
+            if sum(counts.values()) >= 3:
+                hits.append((sum(counts.values()), sid, counts))
+        hits = sorted(hits, reverse=True)[:5]
+        if hits:
+            out.append(Finding("consolidation", "info", note.slug, "also discussed in, not cited: " + "; ".join(
+                f"{sid} ({', '.join(f'{t} {n}×' for t, n in sorted(c.items(), key=lambda kv: -kv[1]))})"
+                for _, sid, c in hits)))
     for link in sorted({x.strip() for x in LINK.findall(index)} - slugs):
-        out.append(Finding("consolidation", "error", "index.md", f"[[{link}]] has no note"))
+        out.append(Finding("consolidation", "error", index_path.name, f"[[{link}]] has no note"))
     for sid, e in sorted(entries.items()):
         if e.get("synthesized") and sid not in cited_anywhere:
             out.append(Finding("consolidation", "error", "-", f"{sid} is marked synthesized but no note cites it"))
@@ -335,9 +347,11 @@ CHECKS = ("citations", "duplicates", "consolidation")
 
 
 def run(root: Path, only: list[str] | None = None, note_slugs: list[str] | None = None) -> list[Finding]:
-    root = Path(root).expanduser().resolve()
-    notes = load_notes(root / "notes")
-    sources = {d.name: Source(d) for d in sorted((root / "sources").glob("*")) if (d / "source.md").exists()}
+    from .layout import open_layout
+    lay, manifest = open_layout(root)
+    root = lay.root
+    notes = load_notes(lay.notes)
+    sources = {sid: Source(md, sid) for sid, md in lay.all_sources(manifest.entries).items()}
     picked = [n for n in notes if not note_slugs or n.slug in note_slugs]
     only = only or list(CHECKS)
     findings = []
@@ -346,11 +360,10 @@ def run(root: Path, only: list[str] | None = None, note_slugs: list[str] | None 
     if "duplicates" in only:
         findings += [f for f in check_duplicates(notes) if not note_slugs or f.note in note_slugs]
     if "consolidation" in only:
-        findings += [f for f in check_consolidation(root, notes, sources, Manifest(root / "manifest.json"))
+        findings += [f for f in check_consolidation(root, notes, sources, manifest, lay.index)
                      if not note_slugs or f.note in note_slugs]
-    work = root / ".work"
-    work.mkdir(exist_ok=True)
-    (work / "notes_check.json").write_text(json.dumps([asdict(f) for f in findings], ensure_ascii=False, indent=1),
+    lay.work.mkdir(parents=True, exist_ok=True)
+    (lay.work / "notes_check.json").write_text(json.dumps([asdict(f) for f in findings], ensure_ascii=False, indent=1),
                                            encoding="utf-8")
     return findings
 

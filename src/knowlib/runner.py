@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import shutil
 import sys
 import time
 import traceback
@@ -19,6 +18,7 @@ from . import progress
 from .config import load_config
 from .contract import hash_file, hash_text, now_iso
 from .ingestors.base import Context, InputItem, find_ingestor
+from .layout import Layout
 from .manifest import Manifest
 from .providers.agent import AgentJobsWaiting
 from .router import discover
@@ -29,12 +29,12 @@ log = logging.getLogger("knowlib")
 def open_library(root: Path, overrides: dict | None = None, force: bool = False) -> tuple[Context, Manifest]:
     root = Path(root).expanduser().resolve()
     cfg = load_config(root, overrides)
-    lc = cfg["library"]
-    ctx = Context(root=root, config=cfg, sources_dir=root / lc["sources"], work_dir=root / lc["work"],
-                  inbox=root / lc["inbox"], force=force)
-    for d in (ctx.sources_dir, ctx.work_dir, ctx.inbox, root / lc["notes"]):
+    lay = Layout(root, cfg)
+    ctx = Context(root=root, config=cfg, sources_dir=lay.sources, work_dir=lay.work, inbox=lay.inbox,
+                  force=force, layout=lay)
+    for d in (ctx.sources_dir, ctx.work_dir, ctx.inbox, lay.notes):
         d.mkdir(parents=True, exist_ok=True)
-    ctx.manifest = Manifest(root / "manifest.json")
+    ctx.manifest = Manifest(lay.manifest)
     return ctx, ctx.manifest
 
 
@@ -57,6 +57,22 @@ class HashCache:
 
     def save(self) -> None:
         self.path.write_text(json.dumps(self.data))
+
+
+def library_files(ctx: Context):
+    """In place, the crawler walks the library itself: skip knowlib's folder, the notes, the agent
+    files at the top and every Markdown file knowlib generated."""
+    lay = ctx.layout
+    if not lay.inplace:
+        return None
+    top = {lay.data, lay.notes, *(ctx.root / n for n in TOP_FILES)}
+
+    def skip(p: Path) -> bool:
+        return p in top or lay.is_generated(p)
+    return skip
+
+
+TOP_FILES = ("AGENTS.md", "CLAUDE.md", "INDEX.md", "glossary.md", ".ignore")
 
 
 def item_hash(item: InputItem, hc: HashCache) -> str:
@@ -93,9 +109,9 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
     ctx, manifest = open_library(root, overrides, force)
     ctx.config["agent_dir"] = str(ctx.work_dir / "agent")
     hc = HashCache(ctx.work_dir / "hash_cache.json")
-    items = discover(ctx.inbox, ctx.config["library"].get("ignore"))
+    items = discover(ctx.inbox, ctx.config["library"].get("ignore"), skip=library_files(ctx))
     layout = ctx.config["library"].get("layout")
-    if ctx.inbox.name != ctx.config["library"]["inbox"]:     # an --input folder: keep same names apart
+    if not ctx.layout.inplace and ctx.inbox.name != ctx.config["library"]["inbox"]:   # an --input folder: keep same names apart
         for i in items:
             i.key = f"{ctx.inbox.name}/{i.key}"
     report = {"started_at": now_iso(), "new": [], "updated": [], "unchanged": 0, "failed": [],
@@ -130,6 +146,7 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
         t0 = time.time()
         print(f"[{time.strftime('%H:%M:%S')}] {ing.name:6s} {item.key}", file=sys.stderr, flush=True)
         progress.item(position, item.key)
+        ctx.item = item
         try:
             res = ing.ingest(item, ctx)
         except AgentJobsWaiting as e:
@@ -147,11 +164,12 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
         progress.item_done()
         old_id = prev.get("source_id")
         if old_id and old_id != res.source_id:
-            shutil.rmtree(ctx.sources_dir / old_id, ignore_errors=True)
+            ctx.layout.remove(old_id, prev)
             report["renamed"].append({"from": old_id, "to": res.source_id})
         manifest.record_success(item.key, content_hash=item.content_hash, source_id=res.source_id,
                                 ingestor=ing.name, pipeline=res.pipeline, flags=res.flags,
-                                local_only=bool(ctx.config.get("local_only") or item.sidecar.get("local_only")))
+                                local_only=bool(ctx.config.get("local_only") or item.sidecar.get("local_only")),
+                                output=Path(res.source_md).relative_to(ctx.root).as_posix() if ctx.layout.inplace else None)
         entry = {"key": item.key, "source_id": res.source_id, "ingestor": ing.name,
                  "seconds": round(time.time() - t0, 1)}
         print(f"           done in {entry['seconds']}s -> sources/{res.source_id}"
@@ -169,4 +187,6 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
     if not dry_run:
         progress.finish()
         (ctx.work_dir / "last_run.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+        from .setup import refresh
+        refresh(ctx.layout, manifest.entries)            # the sources table in the index, sources.jsonl
     return report

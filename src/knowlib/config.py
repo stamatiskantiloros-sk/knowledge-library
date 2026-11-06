@@ -13,6 +13,8 @@ import yaml
 
 DEFAULTS: dict[str, Any] = {
     "library": {
+        "mode": "separate",       # separate: inbox/ and sources/<id>/; inplace: the folder as it is (see layout.py)
+        "data": "_knowlib",       # inplace: images, caches, manifest and this config, in one visible folder
         "inbox": "inbox",
         "sources": "sources",
         "notes": "notes",
@@ -142,9 +144,15 @@ def deep_merge(base: dict, override: dict | None) -> dict:
     return out
 
 
+def config_path(library_root: Path) -> Path:
+    """_knowlib/config.yaml for a library in place, config.yaml at the top otherwise."""
+    inplace = Path(library_root) / "_knowlib" / "config.yaml"
+    return inplace if inplace.exists() else Path(library_root) / "config.yaml"
+
+
 def load_config(library_root: Path, overrides: dict | None = None) -> dict:
     cfg = copy.deepcopy(DEFAULTS)
-    path = Path(library_root) / "config.yaml"
+    path = config_path(library_root)
     if path.exists():
         cfg = deep_merge(cfg, yaml.safe_load(path.read_text(encoding="utf-8")) or {})
     return deep_merge(cfg, overrides)

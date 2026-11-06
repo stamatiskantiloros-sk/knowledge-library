@@ -53,6 +53,16 @@ class Context:
     inbox: Path
     manifest: Any = None
     force: bool = False
+    layout: Any = None            # knowlib.layout.Layout: where sources, assets and caches go
+    item: Any = None              # the InputItem being ingested, set by the runner
+
+    def writer(self, source_id: str):
+        """A SourceWriter for the current item, in this library's layout."""
+        from ..contract import SourceWriter
+        if self.layout is None or not self.layout.inplace:
+            return SourceWriter(self.sources_dir, source_id)
+        return SourceWriter(self.sources_dir, source_id, layout=self.layout,
+                            md=self.layout.output_for(self.item, source_id))
 
     def work_for(self, name: str) -> Path:
         p = self.work_dir / name

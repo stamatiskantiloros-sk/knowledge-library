@@ -203,7 +203,7 @@ class MediaSessionIngestor(Ingestor):
                 flags.append(f"slides file {item.sidecar['slides']} named in session.yaml was not ingested")
 
         # ---- write the source ----------------------------------------------------------
-        w = SourceWriter(ctx.sources_dir, sid)
+        w = ctx.writer(sid)
         try:
             body = self._render(sess, segs, kept, w, cfg, flags, stats) + self._dropped(dropped, w)
             (w.asset_path("transcript.json")).write_text(

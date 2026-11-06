@@ -16,7 +16,7 @@ import shutil
 from pathlib import Path
 
 from .. import progress
-from ..contract import SourceRecord, SourceWriter, hash_file, make_id, stage
+from ..contract import SourceRecord, hash_file, make_id, stage
 from .base import PDF_EXT, Context, Ingestor, IngestResult, InputItem, first_working, register
 
 FORMULA_GAP = "<!-- formula-not-decoded -->"
@@ -182,7 +182,7 @@ def ingest_pdf_file(path: Path, ctx: Context, *, origin: list[str], content_hash
     flags = [f"backend fallback: {e}" for e in errors]
     title = title or pdf_title(path, markdown)
     sid = make_id(title, content_hash)
-    w = SourceWriter(ctx.sources_dir, sid)
+    w = ctx.writer(sid)
     try:
         survey = _page_survey(path, pc.get("min_text_chars", 25))
         scanned = [pg for pg in survey if pg["no_text"]]
@@ -209,8 +209,9 @@ def ingest_pdf_file(path: Path, ctx: Context, *, origin: list[str], content_hash
             if text:
                 ocr_sections.append(f"### Page {pg['page']} (OCR)\n\n![](assets/{dest.name})\n\n{text}")
                 flags.append(f"page {pg['page']}: no text layer, OCR'd with {ocr_tool}")
-            else:
-                flags.append(f"page {pg['page']}: no text layer and no OCR available")
+            else:                                      # keep the page findable: its image is all there is
+                ocr_sections.append(f"### Page {pg['page']} (no text found)\n\n![](assets/{dest.name})")
+                flags.append(f"page {pg['page']}: no text layer and no OCR text: read the page image")
         body = [f"# {title}", markdown.strip()]
         if ocr_sections:
             body += ["## Scanned pages (OCR)", *ocr_sections]

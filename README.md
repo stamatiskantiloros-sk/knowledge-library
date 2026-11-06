@@ -24,15 +24,17 @@ cd knowledge-library
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[mac,docs]"             # add ,api for Claude/GPT/Gemini via LiteLLM
 
-knowlib init ~/KnowledgeLibrary          # creates inbox/, sources/, notes/, config.yaml, CLAUDE.md ...
-knowlib doctor -L ~/KnowledgeLibrary     # shows what is installed for the configured backends
+knowlib init ~/Documents/Accounting      # asks a few questions; use the folder in place, or make a separate library
+knowlib doctor -L ~/Documents/Accounting # shows what is installed for the configured backends
 ```
+
+**Two layouts.** *In place* (the default for a folder that already holds material) uses your folder as it is: knowlib crawls every subfolder and writes each file's Markdown beside it (`inventory.pdf` -> `inventory.pdf.md`), keeps images, caches and its config in a visible `_knowlib/` folder, and puts `notes/`, `INDEX.md`, `glossary.md` and `AGENTS.md` at the top. *Separate* keeps originals in `inbox/` and each source in `sources/<id>/`. Setup asks which, which folders to skip, whether the material is confidential, the language, and which LM Studio models to use; every question also has a flag (`knowlib init --help`), and `--yes` takes the defaults.
 
 First run downloads Whisper large-v3-turbo (~1.6 GB). Vision and text models run in LM Studio (`frame_selection.backend: openai`, `manage_lms: true`): knowlib loads and unloads them by id, so load each one once in LM Studio under the id in `config.yaml`. The tested setup is a fast 9B model for decisions and digests and Qwopus 27B for reading frames, captions and rereading looped digest parts.
 
 ## 2. Add material
 
-Drop files into `inbox/` (never edited or moved by the pipeline). Subfolders are fine.
+In place, the material is already where it belongs: knowlib reads every subfolder and never edits, moves or deletes an original. In a separate library, drop files into `inbox/` (never edited or moved by the pipeline). Subfolders are fine either way.
 
 | You drop | It becomes |
 | --- | --- |
@@ -140,6 +142,8 @@ src/knowlib/
   manifest.py      hashes, status, provenance queries, synthesis tracking
   router.py        inbox walk, session rules, URL lists
   runner.py        process inbox, incremental runs, last_run.json report
+  layout.py        where sources, assets and caches live: in place or separate
+  setup.py         knowlib init: the questions, the config, AGENTS.md and the index's sources table
   progress.py      progress bars, .work/progress.json for `knowlib status`
   digest.py        book digests: chapter parts, loop check, fallback reread
   notecheck.py     checks on topic notes: citations, duplicates, consolidation
@@ -161,7 +165,7 @@ Adding a source type: write `ingestors/<name>.py` with an `@register`'d `Ingesto
 pip install -e ".[dev,docs]" && .venv/bin/python -m pytest -q tests
 ```
 
-The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 60 tests pass.
+The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 65 tests pass.
 
 ## 9. Status
 

@@ -94,13 +94,13 @@ def run(root: Path, *, note_slugs: list[str] | None = None, overrides: dict | No
     section = reviewer_section(cfg)
     provider = get_vision_provider(section, cfg)      # refuses anything remote when the library is local_only
     remote = not getattr(provider, "is_local", True)
-    held = {e["source_id"] for e in Manifest(ctx.root / "manifest.json").entries.values()
-            if e.get("local_only") and e.get("source_id")}
-    sources = {d.name: Source(d) for d in sorted(ctx.sources_dir.glob("*")) if (d / "source.md").exists()}
+    entries = Manifest(ctx.layout.manifest).entries
+    held = {e["source_id"] for e in entries.values() if e.get("local_only") and e.get("source_id")}
+    sources = {sid: Source(md, sid) for sid, md in ctx.layout.all_sources(entries).items()}
     cache = Cache(ctx.work_dir / "notes_review_cache.json")
     findings, pending = [], 0
     try:
-        for note in load_notes(ctx.root / "notes"):
+        for note in load_notes(ctx.layout.notes):
             if note_slugs and note.slug not in note_slugs:
                 continue
             prompt, texts, skipped = build(note, sources, held, remote, int(nr["max_passage_chars"]))

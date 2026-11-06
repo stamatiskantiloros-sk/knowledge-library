@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import urllib.request
 
-from ..contract import SourceRecord, SourceWriter, hash_file, hash_text, make_id, now_iso, stage
+from ..contract import SourceRecord, hash_file, hash_text, make_id, now_iso, stage
 from .base import HTML_EXT, Context, Ingestor, IngestResult, InputItem, first_working, register
 
 
@@ -79,7 +79,7 @@ class WebIngestor(Ingestor):
         meta.append(f"- Fetched: {fetched_at}")
         body = "\n".join(lines + meta) + "\n\n" + md
         pipeline = {"extraction": stage(used, package="trafilatura" if used == "trafilatura" else None)}
-        w = SourceWriter(ctx.sources_dir, sid)
+        w = ctx.writer(sid)
         try:
             rec = SourceRecord(id=sid, title=title, source_type="web",
                                origin=[url] if url else [f"inbox/{item.key}"], hash=content_hash,

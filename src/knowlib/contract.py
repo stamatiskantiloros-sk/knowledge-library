@@ -107,13 +107,39 @@ class SourceRecord:
         return {k: data[k] for k in order if data[k] not in (None, [], {})}
 
 
-class SourceWriter:
-    """Builds sources/<id>/ in a staging folder, then swaps it in atomically,
-    so a crash mid-ingest never leaves a half-written source behind."""
+def contents(body: str, limit: int = 80) -> str:
+    """A short table of contents from the ## headings, each with the page it starts on when the
+    text has page markers, so an agent can jump to a place without reading the whole source.
+    Empty when there are too few headings to help or too many to read."""
+    page, entries = None, []
+    for line in body.splitlines():
+        m = re.match(r"<!-- page (\S+) \(pdf \d+\) -->$", line)
+        if m:
+            page = m[1]
+        elif line.startswith("## ") and not line.startswith("## Contents"):
+            entries.append(line[3:].strip() + (f", p. {page}" if page else ""))
+    if not 3 <= len(entries) <= limit:
+        return ""
+    return "## Contents\n\n" + "\n".join(f"- {e}" for e in entries) + "\n"
 
-    def __init__(self, sources_dir: Path, source_id: str):
-        self.final = Path(sources_dir) / source_id
-        self.staging = Path(sources_dir) / f".{source_id}.tmp"
+
+class SourceWriter:
+    """Writes one source atomically, so a crash mid-ingest never leaves a half-written source.
+
+    Separate mode builds sources/<id>/ (source.md and assets/) in a staging folder and swaps it in.
+    In place (layout.inplace) the Markdown goes beside the original, its images to the layout's
+    assets folder, and image links are rewritten to point there."""
+
+    def __init__(self, sources_dir: Path, source_id: str, *, layout=None, md: Path | None = None):
+        self.layout, self.id = layout, source_id
+        self.inplace = bool(layout and layout.inplace)
+        if self.inplace:
+            self.md = Path(md)
+            self.final = layout.assets_dir(source_id)
+            self.staging = layout.data / "staging" / source_id
+        else:
+            self.final = Path(sources_dir) / source_id
+            self.staging = Path(sources_dir) / f".{source_id}.tmp"
         if self.staging.exists():
             shutil.rmtree(self.staging)
         self.assets = self.staging / "assets"
@@ -125,14 +151,35 @@ class SourceWriter:
         return p
 
     def commit(self, record: SourceRecord, body: str) -> Path:
-        fm = yaml.safe_dump(record.frontmatter(), allow_unicode=True, sort_keys=False, width=100)
-        (self.staging / "source.md").write_text(f"---\n{fm}---\n\n{body.strip()}\n", encoding="utf-8")
-        if not any(self.assets.iterdir()):
-            self.assets.rmdir()
+        meta = {**record.frontmatter(), "generated_by": "knowlib"}
+        body = body.strip()
+        toc = contents(body)
+        if toc:                                        # after the title line
+            head, _, rest = body.partition("\n")
+            body = f"{head}\n\n{toc}\n{rest.lstrip()}" if head.startswith("# ") else f"{toc}\n{body}"
+        if self.inplace:
+            meta["original"] = self.md.relative_to(self.layout.root).as_posix()[:-3]
+            body = body.replace("](assets/", f"]({self.layout.asset_prefix(self.md, self.id)}/")
+        fm = yaml.safe_dump(meta, allow_unicode=True, sort_keys=False, width=100)
+        text = f"---\n{fm}---\n\n{body}\n"
+        if not self.inplace:
+            (self.staging / "source.md").write_text(text, encoding="utf-8")
+            if not any(self.assets.iterdir()):
+                self.assets.rmdir()
+            if self.final.exists():
+                shutil.rmtree(self.final)
+            self.staging.rename(self.final)
+            return self.final / "source.md"
         if self.final.exists():
             shutil.rmtree(self.final)
-        self.staging.rename(self.final)
-        return self.final / "source.md"
+        if any(self.assets.iterdir()):
+            self.final.parent.mkdir(parents=True, exist_ok=True)
+            self.assets.rename(self.final)
+        tmp = self.md.with_name(f".{self.md.name}.tmp")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(self.md)
+        shutil.rmtree(self.staging, ignore_errors=True)
+        return self.md
 
     def abort(self) -> None:
         shutil.rmtree(self.staging, ignore_errors=True)

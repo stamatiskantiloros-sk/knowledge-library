@@ -145,7 +145,7 @@ def test_consolidation(library):
     assert not any("[[example]]" in m for m in found)                       # commented-out example ignored
     assert any("lecture-4 is marked synthesized but no note cites it" in m for m in found)
     assert any("book was reprocessed on 2026-11-01, after this note" in m for m in found)
-    assert any("also discussed in, not cited: deck" in m for m in found)    # the deck talks about WACC
+    assert any("also discussed in, not cited: deck (wacc " in m for m in found)  # names the matching term
 
 
 def test_review_round_trip_through_the_session(library):

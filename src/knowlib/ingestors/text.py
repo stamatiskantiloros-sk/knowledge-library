@@ -10,7 +10,7 @@ import csv
 import json
 from pathlib import Path
 
-from ..contract import SourceRecord, SourceWriter, hash_file, make_id, stage
+from ..contract import SourceRecord, hash_file, make_id, stage
 from .base import Context, Ingestor, IngestResult, InputItem, register
 
 CODE_LANG = {".py": "python", ".r": "r", ".sql": "sql", ".json": "json", ".yaml": "yaml",
@@ -88,7 +88,7 @@ class TextIngestor(Ingestor):
             flags.append("empty file")
         sid = make_id(title, h)
         pipeline = {"extraction": stage("knowlib-text", kind=ext.lstrip("."))}
-        w = SourceWriter(ctx.sources_dir, sid)
+        w = ctx.writer(sid)
         try:
             rec = SourceRecord(id=sid, title=title, source_type="text", origin=[f"inbox/{item.key}"],
                                hash=h, pipeline=pipeline, flags=flags, stats=stats)

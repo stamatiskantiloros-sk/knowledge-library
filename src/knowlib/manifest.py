@@ -34,7 +34,8 @@ class Manifest:
         return not e or e.get("hash") != content_hash or e.get("status") in ("failed", "stale")
 
     def record_success(self, key: str, *, content_hash: str, source_id: str, ingestor: str,
-                       pipeline: dict, flags: list[str], local_only: bool = False) -> None:
+                       pipeline: dict, flags: list[str], local_only: bool = False,
+                       output: str | None = None) -> None:
         prev = self.entries.get(key, {})
         self.entries[key] = {
             "hash": content_hash, "status": "done", "source_id": source_id,
@@ -44,6 +45,8 @@ class Manifest:
             # confidential once means confidential after: re-ingesting without the flag does not clear it
             "local_only": bool(local_only or prev.get("local_only")),
         }
+        if output:                                   # in place: the Markdown beside the original
+            self.entries[key]["output"] = output
         self.save()
 
     def record_failure(self, key: str, *, content_hash: str, ingestor: str, error: str) -> None:

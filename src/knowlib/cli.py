@@ -1,6 +1,6 @@
 """knowlib command line.
 
-  knowlib init [DIR]                 create a library (folders, config.yaml, CLAUDE.md, index, glossary)
+  knowlib init [DIR]                 set a library up (in place or separate): asks, or takes flags
   knowlib doctor [-L DIR]            which tools/models are installed for the configured backends
   knowlib process [-L DIR]           process inbox: ingest new or changed material
   knowlib status [-L DIR]            counts, failures, sources waiting for synthesis
@@ -24,10 +24,10 @@ import shutil
 import subprocess
 import sys
 import urllib.request
-from importlib import resources
 from pathlib import Path
 
 from .config import load_config
+from .layout import open_layout
 
 
 def _lib(args) -> Path:
@@ -35,17 +35,30 @@ def _lib(args) -> Path:
 
 
 def cmd_init(args) -> int:
+    from .setup import init
     root = Path(args.dir).expanduser().resolve()
-    for d in ("inbox", "sources", "notes"):
-        (root / d).mkdir(parents=True, exist_ok=True)
-    tpl = resources.files("knowlib") / "templates"
-    for name in ("config.yaml", "CLAUDE.md", "index.md", "glossary.md", "gitignore"):
-        dest = root / (".gitignore" if name == "gitignore" else name)
-        if not dest.exists():
-            dest.write_text((tpl / name).read_text(encoding="utf-8"), encoding="utf-8")
-            print(f"created {dest.relative_to(root)}")
-    print(f"library ready at {root}\nnext: drop material into {root / 'inbox'} and run `knowlib process -L {root}`")
+    interactive = False if args.yes else None
+    cfg = init(root, mode=args.mode, skip=args.skip, local_only=True if args.local_only else None,
+               language=args.language, fast=args.fast_model, strong=args.strong_model, reviewer=args.reviewer_model,
+               interactive=interactive)
+    print(f"settings in {cfg}")
+    where = "the folders here" if "_knowlib" in cfg.parts else f"{root / 'inbox'}"
+    print(f"next: `knowlib process -L {root}` ingests {where}")
     return 0
+
+
+def _ensure_setup(root: Path) -> bool:
+    """A folder knowlib has never set up: offer setup at a terminal, otherwise say how."""
+    from .config import config_path
+    if config_path(root).exists() or (root / "manifest.json").exists():
+        return True
+    if sys.stdin.isatty():
+        from .setup import init
+        if input(f"{root} is not set up as a library yet. Set it up now? (y/n) [y]: ").strip().lower() in ("", "y", "yes"):
+            init(root)
+            return True
+    print(f"{root} is not a library yet: run `knowlib init {root}` (add --yes to accept the defaults)", file=sys.stderr)
+    return False
 
 
 def _has(mod: str) -> bool:
@@ -130,6 +143,8 @@ def cmd_process(args) -> int:
         overrides = deep_merge(overrides, {"library": {"layout": args.layout}})
     if args.reader == "session":
         overrides = deep_merge(overrides, {"frame_selection": SESSION_READER})
+    if not args.input and not _ensure_setup(_lib(args)):
+        return 2
     rep = process(_lib(args), force=args.force, only=args.only, dry_run=args.dry_run, overrides=overrides,
                   limit=args.limit)
     print(json.dumps({k: rep[k] for k in ("new", "updated", "unchanged", "failed", "unsupported", "renamed")},
@@ -168,8 +183,7 @@ def cmd_transcribe(args) -> int:
 
 
 def cmd_status(args) -> int:
-    from .manifest import Manifest
-    m = Manifest(_lib(args) / "manifest.json")
+    m = open_layout(_lib(args))[1]
     by = {}
     for e in m.entries.values():
         by[e.get("status")] = by.get(e.get("status"), 0) + 1
@@ -186,8 +200,7 @@ def cmd_status(args) -> int:
 
 
 def cmd_qa(args) -> int:
-    from .manifest import Manifest
-    m = Manifest(_lib(args) / "manifest.json")
+    m = open_layout(_lib(args))[1]
     out = {e["source_id"]: e["flags"] for _, e in m.done() if e.get("flags")}
     out.update({k: [e.get("error", "")[-500:]] for k, e in m.entries.items() if e.get("status") == "failed"})
     print(json.dumps(out, indent=2, ensure_ascii=False))
@@ -198,7 +211,7 @@ def cmd_check_notes(args) -> int:
     from . import notecheck
     root = _lib(args)
     findings = notecheck.run(root, only=args.only or None, note_slugs=args.notes or None)
-    print(notecheck.report(findings, len(notecheck.load_notes(root / "notes"))))
+    print(notecheck.report(findings, len(notecheck.load_notes(open_layout(root)[0].notes))))
     return 1 if any(f.level == "error" for f in findings) else 0
 
 
@@ -213,15 +226,14 @@ def cmd_review_notes(args) -> int:
     except AgentJobsWaiting as e:
         print(f"waiting for {e}: answer .work/agent/jobs.json, then run this again")
         return 0
-    print(notecheck.report(findings, len(notecheck.load_notes(root / "notes"))))
+    print(notecheck.report(findings, len(notecheck.load_notes(open_layout(root)[0].notes))))
     return 1 if any(f.level == "error" for f in findings) else 0
 
 
 def cmd_reprocess(args) -> int:
-    from .manifest import Manifest
     from .runner import process
     root = _lib(args)
-    m = Manifest(root / "manifest.json")
+    m = open_layout(root)[1]
     where = dict(w.split("=", 1) for w in args.where)
     keys = m.match(where) if where else []
     if args.ids:
@@ -266,14 +278,15 @@ def cmd_digest(args) -> int:
 
 
 def cmd_pending(args) -> int:
-    from .manifest import Manifest
-    print("\n".join(Manifest(_lib(args) / "manifest.json").pending_synthesis()))
+    print("\n".join(open_layout(_lib(args))[1].pending_synthesis()))
     return 0
 
 
 def cmd_mark(args) -> int:
-    from .manifest import Manifest
-    n = Manifest(_lib(args) / "manifest.json").mark_synthesized(args.ids)
+    from .setup import refresh
+    lay, m = open_layout(_lib(args))
+    n = m.mark_synthesized(args.ids)
+    refresh(lay, m.entries)
     print(f"marked {n} sources as synthesized")
     return 0
 
@@ -287,7 +300,17 @@ def main(argv: list[str] | None = None) -> int:
         sp.add_argument("-L", "--library", default=".", help="library root (default: current folder)")
         return sp
 
-    s = sub.add_parser("init"); s.add_argument("dir", nargs="?", default="."); s.set_defaults(fn=cmd_init)
+    s = sub.add_parser("init", help="set a library up: asks a few questions, or takes them as flags")
+    s.add_argument("dir", nargs="?", default=".")
+    s.add_argument("--mode", choices=["inplace", "separate"], help="inplace: use the folder as it is")
+    s.add_argument("--skip", nargs="*", help="folders or name patterns to leave out")
+    s.add_argument("--local-only", action="store_true", help="the material is confidential: nothing leaves this machine")
+    s.add_argument("--language", help="en, el or mixed")
+    s.add_argument("--fast-model", help="LM Studio model for frame decisions and digests")
+    s.add_argument("--strong-model", help="LM Studio model for reading slides, captions and digest rereads")
+    s.add_argument("--reviewer-model", help="LM Studio model that reviews notes; ideally another family")
+    s.add_argument("--yes", action="store_true", help="ask nothing: the defaults for anything not given")
+    s.set_defaults(fn=cmd_init)
     lib(sub.add_parser("doctor")).set_defaults(fn=cmd_doctor)
     s = lib(sub.add_parser("process"))
     s.add_argument("--input", help="folder to ingest instead of the inbox")

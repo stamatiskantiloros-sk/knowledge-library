@@ -139,7 +139,7 @@ class OfficeIngestor(Ingestor):
         h = item.content_hash or hash_file(path)
         title = _office_title(path) or path.stem.replace("_", " ")
         sid = make_id(title, h)
-        w = SourceWriter(ctx.sources_dir, sid)
+        w = ctx.writer(sid)
         flags: list[str] = []
         pipeline: dict = {}
         try:
