@@ -150,7 +150,8 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
             shutil.rmtree(ctx.sources_dir / old_id, ignore_errors=True)
             report["renamed"].append({"from": old_id, "to": res.source_id})
         manifest.record_success(item.key, content_hash=item.content_hash, source_id=res.source_id,
-                                ingestor=ing.name, pipeline=res.pipeline, flags=res.flags)
+                                ingestor=ing.name, pipeline=res.pipeline, flags=res.flags,
+                                local_only=bool(ctx.config.get("local_only") or item.sidecar.get("local_only")))
         entry = {"key": item.key, "source_id": res.source_id, "ingestor": ing.name,
                  "seconds": round(time.time() - t0, 1)}
         print(f"           done in {entry['seconds']}s -> sources/{res.source_id}"

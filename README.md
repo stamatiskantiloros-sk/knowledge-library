@@ -67,6 +67,7 @@ knowlib process -L ~/KnowledgeLibrary            # ingest new/changed material (
 knowlib status -L ~/KnowledgeLibrary             # live progress of a run, from another shell
 knowlib qa -L ~/KnowledgeLibrary                 # every flag, for the QA pass
 knowlib check-notes -L ~/KnowledgeLibrary        # citations, duplicates and consolidation of notes
+knowlib review-notes -L ~/KnowledgeLibrary       # a second model checks each claim against its pages
 knowlib pending -L ~/KnowledgeLibrary            # sources not yet synthesized into notes
 knowlib digest -L ~/KnowledgeLibrary             # finding aid for each book (PDF of 100+ pages)
 knowlib handbook --prepare --output ~/Handbooks --only "<lecture>"   # brief for a study handbook
@@ -142,6 +143,7 @@ src/knowlib/
   progress.py      progress bars, .work/progress.json for `knowlib status`
   digest.py        book digests: chapter parts, loop check, fallback reread
   notecheck.py     checks on topic notes: citations, duplicates, consolidation
+  notereview.py    a second model reviews each claim against its cited passages
   cli.py           knowlib command
   ingestors/       base (interface + registry), pdf, office, web, media
   media/           av, session, align, transcribe, frames, select, ocr
@@ -159,7 +161,7 @@ Adding a source type: write `ingestors/<name>.py` with an `@register`'d `Ingesto
 pip install -e ".[dev,docs]" && .venv/bin/python -m pytest -q tests
 ```
 
-The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 56 tests pass.
+The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 59 tests pass.
 
 ## 9. Status
 

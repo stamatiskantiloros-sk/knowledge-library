@@ -146,3 +146,48 @@ def test_consolidation(library):
     assert any("lecture-4 is marked synthesized but no note cites it" in m for m in found)
     assert any("book was reprocessed on 2026-11-01, after this note" in m for m in found)
     assert any("also discussed in, not cited: deck" in m for m in found)    # the deck talks about WACC
+
+
+def test_review_round_trip_through_the_session(library):
+    from knowlib import notereview
+    from knowlib.providers.agent import AgentJobsWaiting
+    write(library, "wacc", note("wacc", "WACC",
+        "## Key points\n- Disney's WACC was 8.5% [@book, p. 53].\n"
+        "- WACC is always the right discount rate for every project [@book, p. 53].\n"
+        "- Beta measures market risk [@book, p. 52].\n", ["book"]))
+    with pytest.raises(AgentJobsWaiting):
+        notereview.run(library)
+    jobs = json.loads((library / ".work" / "agent" / "jobs.json").read_text())
+    assert len(jobs) == 1 and jobs[0]["model"] == "sonnet"
+    prompt = jobs[0]["prompt"]
+    assert prompt.count("[P1] book, p. 53") == 1 and "[P2] book, p. 52" in prompt   # each passage sent once
+    assert "Disney" in prompt and "3. Beta measures market risk" in prompt
+    Path(jobs[0]["answer"]).write_text(json.dumps({"claims": [
+        {"n": 1, "verdict": "supported", "reason": "'WACC was 8.5% for Disney'"},
+        {"n": 2, "verdict": "unsupported", "reason": "the passage says nothing about every project"},
+        {"n": 3, "verdict": "partly", "reason": "'measures market risk' but nothing more"}]}))
+    found = notereview.run(library)
+    assert [f.level for f in found] == ["error", "warning"]
+    assert "unsupported: WACC is always" in found[0].message and "every project" in found[0].message
+    assert notereview.run(library) == found                     # cached: no new jobs
+
+
+def test_review_keeps_local_only_sources_on_the_machine(library):
+    from knowlib import notereview
+    from knowlib.providers.base import LocalOnlyViolation
+    m = json.loads((library / "manifest.json").read_text())
+    m["entries"]["book"]["local_only"] = True
+    (library / "manifest.json").write_text(json.dumps(m))
+    write(library, "wacc", note("wacc", "WACC", "## Key points\n- Disney's WACC was 8.5% [@book, p. 53].\n", ["book"]))
+    found = notereview.run(library)                             # nothing to send, so no job and no wait
+    assert len(found) == 1 and "not reviewed: cites local_only book" in found[0].message
+    with pytest.raises(LocalOnlyViolation):
+        notereview.run(library, overrides={"local_only": True})
+
+
+def test_local_only_sticks_in_the_manifest(tmp_path):
+    from knowlib.manifest import Manifest
+    m = Manifest(tmp_path / "manifest.json")
+    m.record_success("a.pdf", content_hash="h", source_id="a", ingestor="pdf", pipeline={}, flags=[], local_only=True)
+    m.record_success("a.pdf", content_hash="h2", source_id="a", ingestor="pdf", pipeline={}, flags=[])
+    assert m.entries["a.pdf"]["local_only"] is True

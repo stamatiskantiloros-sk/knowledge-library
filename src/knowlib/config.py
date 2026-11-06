@@ -94,6 +94,12 @@ DEFAULTS: dict[str, Any] = {
         "fallback_model": None,              # overrides for a stronger model that rereads a part the first one looped on
         "fallback_max_chars": 60000,         # it reads such a part in pieces this long
     },
+    "notes_review": {                    # a second model checks each note's claims against the cited passages
+        "backend": "agent",                  # a session subagent; review-notes --reader local uses caption_model
+        "agent_model": "sonnet",             # a different model from the writer, so their blind spots differ
+        "max_tokens": 4000,
+        "max_passage_chars": 8000,           # each cited passage is cut to this length
+    },
     "ocr_crosscheck": {
         "backends": ["apple-vision"],        # apple-vision | tesseract ; add tesseract as a third opinion
         "languages": ["el-GR", "en-US"],

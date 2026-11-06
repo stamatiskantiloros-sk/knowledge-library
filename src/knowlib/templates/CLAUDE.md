@@ -78,7 +78,12 @@ For each id from `knowlib pending`:
    - **warnings**: a number or quotation not found at the cited place (it may say which page it is on instead), a claim with no citation, a possible duplicate note, `sources:` not matching the citations, a note missing from `index.md`, a note older than a source it cites. Fix each, or leave it only when you checked and it is right (for example a figure you calculated from the cited numbers: say so in the note).
    - **leads** ("also discussed in, not cited"): sources that talk about the note's topic. Read those passages and merge what they add, with citations, or decide they add nothing.
    Duplicates: merge them into one note under the clearer name, move the other names into `aliases`, combine `sources`, repoint every `[[link]]` and `index.md`, then delete the other file.
-9. Run `knowlib mark-synthesized <id> ...` for the sources you finished, once `check-notes` shows no errors.
+9. Run `knowlib review-notes -L .`: a second model, not you, judges every claim against the passages it cites. It stops after writing one job per note to `.work/agent/jobs.json`. Start one subagent on the job's model (Sonnet by default), have it follow each prompt exactly and write only the JSON reply to the job's `answer` path, then run the command again. For `local_only` material use `--reader local`, which reviews on this machine.
+   - **unsupported** (error): the passages do not say it. Correct the claim from the source or remove it.
+   - **partly** (warning): overstated, too general or too exact. Narrow it to what the passages say.
+   - **unclear**: a cited passage is missing or cut off. Fix the locator so it points to the right place.
+   Run `check-notes` and `review-notes` again after the fixes; a changed note is reviewed again.
+10. Run `knowlib mark-synthesized <id> ...` for the sources you finished, once both show no errors.
 
 Notes are written in English unless the user asks otherwise; keep original Greek terms next to their English equivalents where it helps.
 

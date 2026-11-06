@@ -34,13 +34,15 @@ class Manifest:
         return not e or e.get("hash") != content_hash or e.get("status") in ("failed", "stale")
 
     def record_success(self, key: str, *, content_hash: str, source_id: str, ingestor: str,
-                       pipeline: dict, flags: list[str]) -> None:
+                       pipeline: dict, flags: list[str], local_only: bool = False) -> None:
         prev = self.entries.get(key, {})
         self.entries[key] = {
             "hash": content_hash, "status": "done", "source_id": source_id,
             "ingestor": ingestor, "pipeline": pipeline, "flags": flags,
             "first_ingested_at": prev.get("first_ingested_at", now_iso()),
             "updated_at": now_iso(), "synthesized": False,
+            # confidential once means confidential after: re-ingesting without the flag does not clear it
+            "local_only": bool(local_only or prev.get("local_only")),
         }
         self.save()
 

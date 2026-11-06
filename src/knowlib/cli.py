@@ -8,6 +8,7 @@
   knowlib digest [-L DIR]            a finding aid per long PDF (book), for handbooks that cite it
   knowlib qa [-L DIR]                every flag across sources, for the QA pass
   knowlib check-notes [-L DIR]       citations, duplicates and consolidation of the topic notes
+  knowlib review-notes [-L DIR]      a second model judges every claim against its cited passages
   knowlib reprocess --where K=V      mark matching sources stale and re-ingest them
   knowlib pending [-L DIR]           source ids not yet synthesized into notes
   knowlib mark-synthesized ID...     record that sources were synthesized
@@ -201,6 +202,23 @@ def cmd_check_notes(args) -> int:
     return 1 if any(f.level == "error" for f in findings) else 0
 
 
+def cmd_review_notes(args) -> int:
+    from . import notecheck, notereview
+    from .config import deep_merge
+    from .providers.agent import AgentJobsWaiting
+    root = _lib(args)
+    overrides = deep_merge(parse_sets(args.set), {"local_only": True} if args.local_only else {})
+    if args.reader == "session":
+        overrides = deep_merge(overrides, {"notes_review": {"agent_model": args.agent_model}})
+    try:
+        findings = notereview.run(root, reader=args.reader, note_slugs=args.notes or None, overrides=overrides)
+    except AgentJobsWaiting as e:
+        print(f"waiting for {e}: answer .work/agent/jobs.json, then run this again")
+        return 0
+    print(notecheck.report(findings, len(notecheck.load_notes(root / "notes"))))
+    return 1 if any(f.level == "error" for f in findings) else 0
+
+
 def cmd_reprocess(args) -> int:
     from .manifest import Manifest
     from .runner import process
@@ -315,6 +333,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--only", nargs="*", choices=["citations", "duplicates", "consolidation"], default=[])
     s.add_argument("--notes", nargs="*", default=[], help="only these note slugs")
     s.set_defaults(fn=cmd_check_notes)
+    s = lib(sub.add_parser("review-notes", help="a second model judges every claim against its cited passages"))
+    s.add_argument("--notes", nargs="*", default=[], help="only these note slugs")
+    s.add_argument("--reader", choices=["session", "local"], default="session",
+                   help="session: a Claude subagent (default); local: the caption model in LM Studio")
+    s.add_argument("--agent-model", default="sonnet", help="the subagent's model; pick one other than the writer's")
+    s.add_argument("--local-only", action="store_true", help="refuse to send anything off this machine")
+    s.add_argument("--set", action="append", default=[], help="config override, e.g. notes_review.max_tokens=6000")
+    s.set_defaults(fn=cmd_review_notes)
     s = lib(sub.add_parser("reprocess"))
     s.add_argument("--where", action="append", default=[], help="provenance filter, e.g. transcription.model=small")
     s.add_argument("--ids", nargs="*", default=[])
