@@ -10,6 +10,9 @@ Three procedures: **process inbox**, **research** and **handbook**. When the use
 
 ## Procedure 1: process inbox
 
+### 0. Models
+`knowlib models -L .` shows which model does each job: reading (slides, frames, figures, images), digest (books), writer (topic notes), review (checking every claim) and handbook. Before the first ingestion, run it with the user and agree the choices; `knowlib models -L . --check` confirms the servers answer, the reading model takes images without a cap on image detail, and the digest model's context fits a chapter. `process`, `reprocess`, `digest` and `review-notes` check their models again before each run and stop with the fix if one fails.
+
 ### 1. Ingest
 Run `knowlib process -L .` (add `--local-only` if the user says the material is confidential). Long video batches take time, so suggest running them when the machine is free. Ingestion is resumable: re-running continues where it stopped.
 
@@ -32,6 +35,8 @@ Open each new or updated source's Markdown ({{SOURCE_MD}}) and check, in this or
 Fix by reprocessing with a better backend where possible (edit `{{CONFIG}}` or the session's `session.yaml`, then `knowlib reprocess --ids <id>`). Do not hand-edit `source.md`: it is regenerated on reprocessing. Anything that cannot be fixed: leave the flag, log it in `notes/_qa-log.md` (date, source id, issue), and tell the user.
 
 ### 3. Synthesize
+Who writes is the `writer` role (`knowlib models`). If it is a session model other than yours, start subagents on that model, a chapter or a few sources each, and give them steps 1 to 8 below; you then check their notes and run step 9. If it is you, write them yourself.
+
 For each id from `knowlib pending`:
 
 1. Read the source. For lectures, read captions and slide text first; open frame images only where they matter (a chart, table, diagram or equation the caption points to, or an OCR-check slide). Images cost far more than text.
@@ -69,7 +74,7 @@ For each id from `knowlib pending`:
    - **warnings**: a number or quotation not found at the cited place (it may say which page it is on instead), a claim with no citation, a possible duplicate note, `sources:` not matching the citations, a note missing from `{{INDEX}}`, a note older than a source it cites. Fix each, or leave it only when you checked and it is right (for example a figure you calculated from the cited numbers: say so in the note).
    - **leads** ("also discussed in, not cited"): sources that talk about the note's topic. Read those passages and merge what they add, with citations, or decide they add nothing.
    Duplicates: merge them into one note under the clearer name, move the other names into `aliases`, combine `sources`, repoint every `[[link]]` and `{{INDEX}}`, then delete the other file.
-9. Run `knowlib review-notes -L .`: a second model, not you, judges every claim against the passages it cites. Which model is set under `notes_review` in `config.yaml`; by default it is a local model in LM Studio, and the command reports when it finishes. If it is set to a session model (`backend: agent`), the command stops after writing one job per note to `.work/agent/jobs.json`: start one subagent on the job's model, have it follow each prompt exactly and write only the JSON reply to the job's `answer` path, then run the command again. Claims citing `local_only` sources are never sent to a session model.
+9. Run `knowlib review-notes -L .`: a second model, not you, judges every claim against the passages it cites. Which model is the `review` role (`knowlib models`); it should not be the model that wrote the notes, and ideally it is the strongest one available. A model server or LM Studio model reports when it finishes. A session model (`backend: agent`) makes the command stop after writing one job per note to `.work/agent/jobs.json`: split the jobs into groups of about 280,000 prompt characters, start one subagent per group on the job's model, have it follow each prompt exactly and write only the JSON reply to the job's `answer` path, then run the command again. Check each claim it flags against its page before changing the note. Claims citing `local_only` sources are never sent to a session model.
    - **unsupported** (error): the passages do not say it. Correct the claim from the source or remove it.
    - **partly** (warning): overstated, too general or too exact. Narrow it to what the passages say.
    - **unclear**: a cited passage is missing or cut off. Fix the locator so it points to the right place.

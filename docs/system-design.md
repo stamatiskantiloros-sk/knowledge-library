@@ -363,6 +363,8 @@ A slide's speech runs from its start to the next slide's start. Audio-only sessi
 
 With `manage_lms`, the `openai` provider loads and unloads models through the `lms` CLI, passing context length and parallel slots. Parallel slots share memory, and requests are sequential, so use one. It strips reasoning up to `</think>` (and Gemma's `<thought>` blocks) and records `finish_reason`. Before loading, it compares the model's size from `lms ls` with the memory macOS can hand out without swapping (free, inactive, speculative and purgeable pages). A model that will not fit stops the run at once with `NotEnoughMemory`, naming the largest apps, instead of loading into swap: on the 24 GB Mac a 14 GB model with two browsers open ran several times slower and LM Studio dropped requests after 600 s without output. Callers that fall back to another model on a load error let this one through. `memory_check: false` turns it off, and a model already loaded is not checked. A local timeout is required, because a stalled local server otherwise blocks a lecture for its full timeout.
 
+**Roles** (`models.py`). A library has five model roles, each resolved from the config the way the code that runs it builds its provider: reading (`frame_selection` with its `caption_model`, which also reads figures and images), digest (`frame_selection` plus `digest`), writer (`notes_writer`, recorded for the agent, which writes the notes), review (`frame_selection`, `caption_model`, then `notes_review`) and handbook (`frame_selection` plus `handbook`). `knowlib models` writes a role's provider into only the keys that role reads, keeping the other settings and a backup of the config. A check lists the server's models and confirms the one chosen is served, that a reading model takes images, and, in full, that the server does not cap image tokens (a 1600x1200 test page against a copy at half size) and that the digest's parts fit the context. Before a run, the roles that command uses are checked quickly; a failure stops it, and a choice changed since the last confirmed run is asked about at a terminal (fingerprints in `work/models_confirmed.json`). The pattern the roles encourage: a fast server reads, a session model writes, and a stronger one reviews.
+
 `reasoning_effort: none` is available on this provider. In testing it kept the numbers on 10 of 11 frames and saved about a quarter of the reading time, with small losses of on-screen text. It is off by default.
 
 ### Session reader
@@ -400,11 +402,12 @@ knowlib stops at clean sources. `templates/CLAUDE.md` tells the agent what comes
 |---|---|
 | `knowlib init [DIR]` | Create a library |
 | `knowlib doctor` | Check tools, packages and backends |
+| `knowlib models` | Show, change (`--use role=spec`) and check (`--check`) the model for each role: reading, digest, writer, review, handbook |
 | `knowlib process` | Ingest new or changed material. Flags: `--input`, `--layout`, `--only`, `--force`, `--dry-run`, `--limit`, `--local-only`, `--set`, `--reader` |
 | `knowlib status` | Counts, failures and live progress |
 | `knowlib qa` | All flags across sources |
 | `knowlib check-notes` | Citations, duplicates and consolidation of the notes, with `--only` and `--notes` |
-| `knowlib review-notes` | A second model, set under `notes_review`, judges each claim against its cited passages, with `--notes` and `--set` |
+| `knowlib review-notes` | A second model, the review role, judges each claim against its cited passages, with `--notes` and `--set` |
 | `knowlib reprocess` | Mark matching sources stale and re-ingest, with `--where` or `--ids` |
 | `knowlib pending` | Sources not yet synthesized |
 | `knowlib mark-synthesized ID...` | Record synthesis |

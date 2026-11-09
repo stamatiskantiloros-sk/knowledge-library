@@ -119,19 +119,6 @@ def lmstudio_models() -> list[dict]:
     return sorted(models, key=lambda m: -m.get("sizeBytes", 0))
 
 
-def pick(role: str, models: list[dict], default: str | None, interactive: bool) -> str | None:
-    """A model key for a role, chosen by number from the LM Studio list; Enter keeps the default."""
-    if not interactive or not models:
-        return default
-    print(f"\n{role}:")
-    for i, m in enumerate(models, 1):
-        print(f"  {i:2d}. {m['modelKey']}  ({m.get('sizeBytes', 0) / 1e9:.1f} GB, {m.get('architecture', '?')})")
-    reply = input(f"number, or Enter for {default or 'the built-in default'}: ").strip()
-    if reply.isdigit() and 1 <= int(reply) <= len(models):
-        return models[int(reply) - 1]["modelKey"]
-    return default
-
-
 def model_config(fast: str | None, strong: str | None, reviewer: str | None) -> dict:
     """Config for models served by LM Studio, which knowlib loads and unloads itself."""
     if not (fast or strong or reviewer):
@@ -179,14 +166,6 @@ def init(root: Path, *, mode: str | None = None, skip: list[str] | None = None, 
         local_only = yes("Is this material confidential, never to leave this machine?", False, interactive)
     if language is None:
         language = ask("Language of lectures and documents: en, el or mixed", "en", interactive)
-    if interactive and not (fast or strong or reviewer):
-        models = lmstudio_models()
-        if models:
-            print("\nLocal models in LM Studio. Pick a fast model for frame decisions and book digests, a strong one "
-                  "for reading slides and captions, and a reviewer for notes, ideally of another family.")
-            fast = pick("Fast model", models, None, True)
-            strong = pick("Strong model", models, fast, True)
-            reviewer = pick("Note reviewer", models, None, True)
 
     lay = Layout(root, {"library": {"mode": mode, "data": "_knowlib", "notes": "notes", "inbox": "inbox",
                                     "sources": "sources", "work": ".work"}})
@@ -203,6 +182,14 @@ def init(root: Path, *, mode: str | None = None, skip: list[str] | None = None, 
         shutil.copy2(cfg_path, cfg_path.with_suffix(".yaml.bak"))
     cfg_path.write_text(header + yaml.safe_dump(answers, sort_keys=False, allow_unicode=True), encoding="utf-8")
     shutil.copy2(TEMPLATES / "config.yaml", cfg_path.with_name("config.example.yaml"))
+    if interactive and not (fast or strong or reviewer):
+        from . import models
+        from .config import load_config
+        print("\nWhich model does what. Enter keeps the built-in default; `knowlib models` changes it later. "
+              "Ideally the model that reviews notes is a stronger one than the model that writes them.")
+        changes = models.choose(load_config(root))
+        if changes:
+            models.save(root, changes)
 
     lay.notes.mkdir(exist_ok=True)
     if mode == "separate":

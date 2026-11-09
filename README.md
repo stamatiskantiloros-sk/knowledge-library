@@ -28,7 +28,7 @@ knowlib init ~/Documents/MyCourse      # asks a few questions; use the folder in
 knowlib doctor -L ~/Documents/MyCourse # shows what is installed for the configured backends
 ```
 
-**Two layouts.** *In place* (the default for a folder that already holds material) uses your folder as it is: knowlib crawls every subfolder and writes each file's Markdown beside it (`inventory.pdf` -> `inventory.pdf.md`), keeps images, caches and its config in a visible `_knowlib/` folder, and puts `notes/`, `INDEX.md`, `glossary.md` and `AGENTS.md` at the top. *Separate* keeps originals in `inbox/` and each source in `sources/<id>/`. Setup asks which, which folders to skip, whether the material is confidential, the language, and which LM Studio models to use; every question also has a flag (`knowlib init --help`), and `--yes` takes the defaults.
+**Two layouts.** *In place* (the default for a folder that already holds material) uses your folder as it is: knowlib crawls every subfolder and writes each file's Markdown beside it (`inventory.pdf` -> `inventory.pdf.md`), keeps images, caches and its config in a visible `_knowlib/` folder, and puts `notes/`, `INDEX.md`, `glossary.md` and `AGENTS.md` at the top. *Separate* keeps originals in `inbox/` and each source in `sources/<id>/`. Setup asks which, which folders to skip, whether the material is confidential, the language, and which model does each job (see section 5); every question also has a flag (`knowlib init --help`), and `--yes` takes the defaults.
 
 First run downloads Whisper large-v3-turbo (~1.6 GB). Vision and text models run in LM Studio (`frame_selection.backend: openai`, `manage_lms: true`): knowlib loads and unloads them by id, so load each one once in LM Studio under the id in `config.yaml`. The tested setup is a fast 9B model for decisions and digests and Qwopus 27B for reading frames, captions and rereading looped digest parts.
 
@@ -101,7 +101,18 @@ Frames are kept at native resolution; the `view/` copy (≤ 1568 px) is what the
 
 ## 5. Swapping models and backends
 
-Everything is in `config.yaml` (full list with defaults: `src/knowlib/config.py`). Examples:
+Each library has five model roles: **reading** (slides, frames, figures, images), **digest** (books), **writer** (topic notes, written by an agent), **review** (a second model checks every claim) and **handbook**. `knowlib models` shows and changes them, and setup asks for them:
+
+```bash
+knowlib models -L ~/Documents/MyCourse                     # show; at a terminal, asks role by role
+knowlib models -L ~/Documents/MyCourse --use writer=session:sonnet --use review=session:opus
+knowlib models -L ~/Documents/MyCourse --use reading='server:https://gpu-box.example/v1|qwen3-vl|GPU_KEY'
+knowlib models -L ~/Documents/MyCourse --check             # servers answer, vision without an image-token cap, context fits
+```
+
+A provider is `server:<url>|<model>[|<env var with the key>]` (any OpenAI-compatible server), `lmstudio:<model>` (LM Studio on this machine, loaded and unloaded by knowlib), `session:haiku|sonnet|opus` (a Claude model through the Claude Code session) or `default`. The reviewer should not be the writer, and is best the strongest model available. Before `process`, `reprocess`, `digest` and `review-notes`, knowlib prints the models the run uses, checks they answer, stops with the fix if one does not, and asks again only when a choice changed (`--no-model-check` skips this).
+
+Everything else is in `config.yaml` (full list with defaults: `src/knowlib/config.py`). Examples:
 
 ```yaml
 frame_selection: {backend: ollama, ollama_model: "qwen3-vl:8b"}          # local via Ollama
@@ -145,6 +156,7 @@ src/knowlib/
   runner.py        process inbox, incremental runs, last_run.json report
   layout.py        where sources, assets and caches live: in place or separate
   setup.py         knowlib init: the questions, the config, AGENTS.md and the index's sources table
+  models.py        knowlib models: the provider per role, the checks, the check before each run
   progress.py      progress bars, .work/progress.json for `knowlib status`
   digest.py        book digests: chapter parts, loop check, fallback reread
   notecheck.py     checks on topic notes: citations, duplicates, consolidation
@@ -166,7 +178,7 @@ Adding a source type: write `ingestors/<name>.py` with an `@register`'d `Ingesto
 pip install -e ".[dev,docs]" && .venv/bin/python -m pytest -q tests
 ```
 
-The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 77 tests pass.
+The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 83 tests pass.
 
 ## 9. Status
 

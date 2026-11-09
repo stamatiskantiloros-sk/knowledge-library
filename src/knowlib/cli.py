@@ -61,6 +61,46 @@ def _ensure_setup(root: Path) -> bool:
     return False
 
 
+def _models_ok(args, command: str, overrides: dict | None = None) -> bool:
+    """The pre-run model check (knowlib/models.py), unless --no-model-check."""
+    if getattr(args, "no_model_check", False):
+        return True
+    from . import models
+    from .config import load_config
+    root = _lib(args)
+    lay, _ = open_layout(root, overrides)
+    return models.preflight(load_config(root, overrides), lay.work, command)
+
+
+def cmd_models(args) -> int:
+    from . import models
+    from .config import load_config
+    root = _lib(args)
+    if not _ensure_setup(root):
+        return 2
+    changes = {}
+    for pair in args.use:
+        role, _, spec = pair.partition("=")
+        if role not in models.ROLES:
+            print(f"unknown role {role!r}: {', '.join(models.ROLES)}", file=sys.stderr)
+            return 2
+        changes[role] = models.parse_spec(spec)
+    if not changes and sys.stdin.isatty() and not args.check:
+        changes = models.choose(load_config(root))
+    if changes:
+        print(f"saved to {models.save(root, changes)}")
+    cfg = load_config(root)
+    bad = 0
+    for role, what in models.ROLES.items():
+        line = f"{role:9s} {models.describe(models.section(cfg, role))}"
+        if args.check or changes:
+            ok, msg = models.check(cfg, role, full=True)
+            bad += not ok
+            line += f"\n          {'ok' if ok else 'PROBLEM'}: {msg}"
+        print(line)
+    return 1 if bad else 0
+
+
 def _has(mod: str) -> bool:
     return importlib.util.find_spec(mod) is not None
 
@@ -145,6 +185,8 @@ def cmd_process(args) -> int:
         overrides = deep_merge(overrides, {"frame_selection": SESSION_READER})
     if not args.input and not _ensure_setup(_lib(args)):
         return 2
+    if args.reader != "session" and not args.dry_run and not _models_ok(args, "process", overrides):
+        return 2
     rep = process(_lib(args), force=args.force, only=args.only, dry_run=args.dry_run, overrides=overrides,
                   limit=args.limit)
     print(json.dumps({k: rep[k] for k in ("new", "updated", "unchanged", "failed", "unsupported", "renamed")},
@@ -221,6 +263,8 @@ def cmd_review_notes(args) -> int:
     from .providers.agent import AgentJobsWaiting
     root = _lib(args)
     overrides = deep_merge(parse_sets(args.set), {"local_only": True} if args.local_only else {})
+    if not _models_ok(args, "review-notes", overrides):
+        return 2
     try:
         findings = notereview.run(root, note_slugs=args.notes or None, overrides=overrides)
     except AgentJobsWaiting as e:
@@ -241,6 +285,8 @@ def cmd_reprocess(args) -> int:
     print(f"{len(keys)} sources match: " + ", ".join(m.entries[k].get("source_id", k) for k in keys))
     if not keys or args.dry_run:
         return 0
+    if not _models_ok(args, "reprocess"):
+        return 2
     m.mark_stale(keys)
     # rerun the stages under the new config; caches keyed by config fingerprint are invalidated
     rep = process(root, only=keys, force=True)
@@ -268,6 +314,8 @@ def cmd_digest(args) -> int:
     overrides = deep_merge(parse_sets(args.set), {"local_only": True} if args.local_only else {})
     if args.reader == "session":
         overrides = deep_merge(overrides, {"digest": {"backend": "agent", "agent_model": args.agent_model}})
+    if not _models_ok(args, "digest", overrides):
+        return 2
     try:
         results = run(_lib(args), ids=args.ids or None, force=args.force, overrides=overrides)
     except AgentJobsWaiting as e:
@@ -324,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="override a config value for this run, e.g. --set video.fps=2")
     s.add_argument("--limit", type=int, help="process at most N inputs (for test runs)")
+    s.add_argument("--no-model-check", action="store_true", help="skip the check that the models answer")
     s.set_defaults(fn=cmd_process)
     s = lib(sub.add_parser("transcribe", help="transcribe one file to test the Whisper setup"))
     s.add_argument("file")
@@ -347,6 +396,7 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--agent-model", default="sonnet", help="with --reader session: sonnet or haiku")
     s.add_argument("--local-only", action="store_true", help="block all API calls for this run")
     s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    s.add_argument("--no-model-check", action="store_true", help="skip the check that the models answer")
     s.set_defaults(fn=cmd_digest)
     lib(sub.add_parser("status")).set_defaults(fn=cmd_status)
     lib(sub.add_parser("qa")).set_defaults(fn=cmd_qa)
@@ -358,12 +408,19 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--notes", nargs="*", default=[], help="only these note slugs")
     s.add_argument("--local-only", action="store_true", help="refuse to send anything off this machine")
     s.add_argument("--set", action="append", default=[], help="config override, e.g. notes_review.openai_model=google/gemma-4-12b")
+    s.add_argument("--no-model-check", action="store_true", help="skip the check that the models answer")
     s.set_defaults(fn=cmd_review_notes)
     s = lib(sub.add_parser("reprocess"))
     s.add_argument("--where", action="append", default=[], help="provenance filter, e.g. transcription.model=small")
     s.add_argument("--ids", nargs="*", default=[])
     s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--no-model-check", action="store_true", help="skip the check that the models answer")
     s.set_defaults(fn=cmd_reprocess)
+    s = lib(sub.add_parser("models", help="which model does what: show, change (--use role=spec) and check them"))
+    s.add_argument("--use", action="append", default=[], metavar="ROLE=SPEC",
+                   help="e.g. review=session:opus, reading=server:https://host/v1|model|KEY_ENV, digest=lmstudio:<key>")
+    s.add_argument("--check", action="store_true", help="check every role, including image detail and context")
+    s.set_defaults(fn=cmd_models)
     lib(sub.add_parser("pending")).set_defaults(fn=cmd_pending)
     s = lib(sub.add_parser("mark-synthesized")); s.add_argument("ids", nargs="+"); s.set_defaults(fn=cmd_mark)
 
