@@ -96,6 +96,15 @@ class OpenAICompatProvider(VisionProvider):
                 f"Largest users: {largest_processes()}. Close what you can and run again, "
                 "or set memory_check: false to load it anyway (slowly, through swap).")
 
+    def _already_loaded(self) -> dict | None:
+        """LM Studio's entry for this model if it is in memory already (loaded by hand or by an earlier run)."""
+        lms = shutil.which("lms") or str(Path.home() / ".lmstudio/bin/lms")
+        try:
+            r = subprocess.run([lms, "ps", "--json"], capture_output=True, text=True, timeout=30)
+            return next((m for m in json.loads(r.stdout or "[]") if m.get("identifier") == self.model), None)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+
     def close(self) -> None:
         if self._loaded:
             self._lms("unload", self.model)
@@ -103,13 +112,7 @@ class OpenAICompatProvider(VisionProvider):
 
     def generate(self, images: list[Path], prompt: str, *, json_mode: bool = False,
                  max_tokens: int | None = None) -> str:
-        if self.manage_lms and not self._loaded:
-            if self.memory_check:
-                self._check_memory()
-            ctx =["-c", str(self.context_length)] if self.context_length else []
-            ctx += ["--parallel", str(self.parallel)] if self.parallel else []
-            self._lms("load", self.model, "-y", "--identifier", self.model, *ctx)
-            self._loaded = True
+        self._ensure_loaded()
         content = [{"type": "image_url",
                     "image_url": {"url": f"data:image/jpeg;base64,{image_b64(p, self.max_px)}"}}
                    for p in images]
@@ -118,15 +121,45 @@ class OpenAICompatProvider(VisionProvider):
                 "max_tokens": max_tokens or self.max_tokens, "temperature": self.temperature}
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
-        req = urllib.request.Request(f"{self.base_url}/chat/completions", data=json.dumps(body).encode(),
-                                     headers={"Content-Type": "application/json",
-                                              "Authorization": f"Bearer {self.api_key}"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as r:
-            choice = json.loads(r.read())["choices"][0]
+        choice = self._post(body)["choices"][0]
         self.last_finish = choice.get("finish_reason")
         reply = choice["message"]["content"] or ""
         reply = re.sub(r"<thought>.*?</thought>", "", reply, flags=re.S)   # Gemma's reasoning
         return reply.split("</think>")[-1].strip()           # reasoning models
+
+    def image_tokens(self, image: Path) -> int | None:
+        """The prompt tokens the server spends on one image (None if it does not report usage):
+        a server that caps them shows every image to the model at the same low detail."""
+        self._ensure_loaded()
+        def tokens(content):
+            body = {"model": self.model, "max_tokens": 1, "temperature": 0,
+                    "messages": [{"role": "user", "content": content}]}
+            return (self._post(body).get("usage") or {}).get("prompt_tokens")
+        with_image = tokens([{"type": "image_url", "image_url": {
+            "url": f"data:image/jpeg;base64,{image_b64(image, self.max_px)}"}}, {"type": "text", "text": "Hi"}])
+        text_only = tokens([{"type": "text", "text": "Hi"}])
+        return None if with_image is None or text_only is None else with_image - text_only
+
+    def _post(self, body: dict) -> dict:
+        req = urllib.request.Request(f"{self.base_url}/chat/completions", data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json",
+                                              "Authorization": f"Bearer {self.api_key}"})
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            return json.loads(r.read())
+
+    def _ensure_loaded(self) -> None:
+        if self.manage_lms and not self._loaded:
+            if self.memory_check:
+                self._check_memory()
+            ctx =["-c", str(self.context_length)] if self.context_length else []
+            ctx += ["--parallel", str(self.parallel)] if self.parallel else []
+            held = self._already_loaded()
+            if held and self.context_length and held.get("contextLength") not in (None, int(self.context_length)):
+                self._lms("unload", self.model)          # loaded earlier with another context: reload it
+                held = None
+            if not held:
+                self._lms("load", self.model, "-y", "--identifier", self.model, *ctx)
+            self._loaded = True
 
     def provenance(self) -> dict:
         return {"backend": self.backend, "model": self.model, "base_url": self.base_url}

@@ -24,8 +24,8 @@ cd knowledge-library
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[mac,docs]"             # add ,api for Claude/GPT/Gemini via LiteLLM
 
-knowlib init ~/Documents/Accounting      # asks a few questions; use the folder in place, or make a separate library
-knowlib doctor -L ~/Documents/Accounting # shows what is installed for the configured backends
+knowlib init ~/Documents/MyCourse      # asks a few questions; use the folder in place, or make a separate library
+knowlib doctor -L ~/Documents/MyCourse # shows what is installed for the configured backends
 ```
 
 **Two layouts.** *In place* (the default for a folder that already holds material) uses your folder as it is: knowlib crawls every subfolder and writes each file's Markdown beside it (`inventory.pdf` -> `inventory.pdf.md`), keeps images, caches and its config in a visible `_knowlib/` folder, and puts `notes/`, `INDEX.md`, `glossary.md` and `AGENTS.md` at the top. *Separate* keeps originals in `inbox/` and each source in `sources/<id>/`. Setup asks which, which folders to skip, whether the material is confidential, the language, and which LM Studio models to use; every question also has a flag (`knowlib init --help`), and `--yes` takes the defaults.
@@ -38,8 +38,9 @@ In place, the material is already where it belongs: knowlib reads every subfolde
 
 | You drop | It becomes |
 | --- | --- |
-| `.pdf` | PDF source; pages with figures rendered to images; scanned pages OCR'd and flagged |
+| `.pdf` | PDF source with printed page numbers; each chart, diagram or table-as-picture cropped and read by the vision model, its text placed on its page (logos, icons and photos skipped); scanned pages OCR'd and flagged |
 | `.docx .pptx .xlsx .odt .rtf` | Office source; `.pptx` slide by slide (image + text + speaker notes) |
+| loose images (`.png .jpg .webp .tif`) | one source per folder (`Ch12 Qs/Ch12 Qs.images.md`), a section per image, in file-name order: the vision model's transcription (tables, every option of a quiz question and which one is marked) checked against classic OCR; `images.describe: false` uses OCR only |
 | `.html` / `urls.txt` / `.url` / `.webloc` | web source with URL and fetch date |
 | a lone audio or video file | its own session (a `.srt`/`.vtt` with the same name is attached) |
 | a folder with **one video + audio files** | one session: video for slides, best audio for the transcript |
@@ -52,7 +53,7 @@ title: Corporate Finance - Lecture 4
 date: 2026-10-28
 language: el                  # el | en | mixed  (set explicitly; no auto-detect)
 glossary: [WACC, CAPM, ΔΕΣΦΑ] # or a path to a text file; seeds Whisper's spelling
-primary_audio: zoom_h1.wav    # the best recording; otherwise chosen by estimated SNR
+primary_audio: recorder.wav    # the best recording; otherwise chosen by estimated SNR
 video: lecture.mp4            # if the folder holds several videos
 slides: slides.pdf            # the deck: ingested too and linked from the lecture
 local_only: true              # block every API call for this session
@@ -149,7 +150,7 @@ src/knowlib/
   notecheck.py     checks on topic notes: citations, duplicates, consolidation
   notereview.py    a second model reviews each claim against its cited passages
   cli.py           knowlib command
-  ingestors/       base (interface + registry), pdf, office, web, media
+  ingestors/       base (interface + registry), pdf, office, web, text, images, media
   media/           av, session, align, transcribe, frames, select, ocr
   providers/       model layer: openai-compatible (LM Studio, llama.cpp, vLLM), mlx-vlm, ollama,
                    api (LiteLLM), agent (Claude Code session reader), mock
@@ -165,7 +166,7 @@ Adding a source type: write `ingestors/<name>.py` with an `@register`'d `Ingesto
 pip install -e ".[dev,docs]" && .venv/bin/python -m pytest -q tests
 ```
 
-The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 65 tests pass.
+The suite generates its own material (a 2-minute lecture with slides, a separate better recording with a 2.3 s offset, a scanned slide deck, PDFs, Office files, a web page, a six-page book with printed page labels) and runs the whole pipeline with mock models and the session reader, so it needs only ffmpeg. 77 tests pass.
 
 ## 9. Status
 

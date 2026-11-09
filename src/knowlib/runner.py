@@ -78,7 +78,7 @@ TOP_FILES = ("AGENTS.md", "CLAUDE.md", "INDEX.md", "glossary.md", ".ignore")
 def item_hash(item: InputItem, hc: HashCache) -> str:
     if item.kind == "url":
         return hash_text(item.url or "")
-    if item.kind == "session":
+    if item.kind in ("session", "images"):
         import hashlib
         h = hashlib.sha256()
         for p in sorted(item.paths, key=lambda p: p.name):
@@ -118,7 +118,7 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
               "unsupported": [], "flags": {}, "renamed": [], "waiting": [], "orphans": []}
     seen_keys = set()
     only_list = [only] if isinstance(only, str) else list(only or [])
-    wanted = sum(1 for i in items if not only_list or any(o in i.key for o in only_list))
+    wanted = sum(1 for i in items if (not only_list or any(o in i.key for o in only_list)) and find_ingestor(i))
     if not dry_run:
         progress.start(ctx.work_dir, wanted)
     position = 0
@@ -126,7 +126,8 @@ def process(root: Path, *, force: bool = False, only: str | list[str] | None = N
         seen_keys.add(item.key)
         if only_list and not any(o in item.key for o in only_list):
             continue
-        position += 1
+        if find_ingestor(item):                   # unsupported files (images, scripts) are not counted
+            position += 1
         if limit is not None and len(report["new"]) + len(report["updated"]) + len(report["failed"]) >= limit:
             break
         item.content_hash = item_hash(item, hc)

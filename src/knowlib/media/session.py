@@ -6,13 +6,13 @@ session.yaml (all keys optional):
     date: 2026-10-28
     language: el            # el | en | mixed
     glossary: [WACC, ΔΕΣΦΑ, CAPM]      # or a path to a text file, one term per line
-    primary_audio: zoom_h1.wav         # the best recording; otherwise picked by SNR
+    primary_audio: recorder.wav         # the best recording; otherwise picked by SNR
     video: lecture.mp4                 # if the folder has several videos
     slides: slides.pdf                 # the deck, ingested alongside and linked
     local_only: true                   # block all API calls for this session
     fps: 2                             # e.g. fast screen recording / live coding
     tags: [mba, finance]
-    files: [lecture.mp4, zoom_h1.wav]  # explicit membership (otherwise: all media in the folder)
+    files: [lecture.mp4, recorder.wav]  # explicit membership (otherwise: all media in the folder)
 """
 from __future__ import annotations
 

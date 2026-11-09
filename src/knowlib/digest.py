@@ -164,8 +164,13 @@ def digest_book(source_md: Path, assets: Path, cfg: dict, provider, cache: Cache
         span = range(first, last + 1)
         where = f"a part (\"{chunks[i]['title']}\", pages {label(first)}–{label(last)})"
         text = "\n\n".join(f"=== Page {label(p)} ===\n{pg.get(p, ('', ''))[1]}" for p in span)
-        return drop_repeats(cache.ask(model, DIGEST_PROMPT.format(where=where, title=fm.get("title", ""), text=text),
-                                      tokens).strip())
+        reply, cut = cache.ask_checked(model, DIGEST_PROMPT.format(where=where, title=fm.get("title", ""), text=text),
+                                       tokens, retries=int(dc.get("retries", 1)))
+        reply, looped = drop_repeats(reply.strip())
+        lines = reply.splitlines()
+        if cut and lines and not lines[-1].rstrip().endswith((".", ")", "⚠", "(none)")):
+            reply = "\n".join(lines[:-1])             # the item the token limit cut off
+        return reply, looped or cut
 
     replies: dict[int, tuple[str, bool]] = {}
     pending = 0
@@ -178,15 +183,21 @@ def digest_book(source_md: Path, assets: Path, cfg: dict, provider, cache: Cache
     reread = {}
     progress.stage("digest parts", len(chunks), len(chunks))
     looped = [i for i, (_, loop) in replies.items() if loop]
-    if fallback and looped and not pending:
-        provider.close()                               # free the memory before the larger model loads
+    reader = fallback or provider                      # without a fallback, the same model reads it in pieces
+    if looped and not pending:
+        if fallback:
+            provider.close()                           # free the memory before the larger model loads
         for n, i in enumerate(looped):
             progress.stage("rereading looped parts", n, len(looped))
-            pieces = by_pages(chunks[i]["first"], chunks[i]["last"], page_chars, int(dc.get("fallback_max_chars", 60000)))
+            first, last = chunks[i]["first"], chunks[i]["last"]
+            pieces = by_pages(first, last, page_chars, int(dc.get("fallback_max_chars", 60000)))
+            if len(pieces) == 1:                       # whole again could be the very request that failed
+                half = -(-sum(page_chars.get(p, 0) for p in range(first, last + 1)) // 2)
+                pieces = by_pages(first, last, page_chars, half)
             got = []
             for a, b in pieces:
                 try:
-                    got.append(ask(fallback, i, a, b))
+                    got.append(ask(reader, i, a, b))
                 except AgentPending:
                     pending += 1
                 except NotEnoughMemory:
@@ -204,7 +215,7 @@ def digest_book(source_md: Path, assets: Path, cfg: dict, provider, cache: Cache
 
     by = f"{provider.model} one part at a time"
     if reread:
-        by += f"; the {len(reread)} parts it repeated itself on were read again by {fallback.model}"
+        by += f"; the {len(reread)} parts it repeated itself on or ran out of tokens in were read again by {reader.model}"
     out = ["# Digest: " + fm.get("title", source_md.stem), "",
            f"A finding aid for this book. Find the pages here, then read them in `{source_md}`, where each "
            "page starts with `<!-- page N (pdf M) -->`; cite the book and its page, never this digest. The contents "
@@ -221,10 +232,11 @@ def digest_book(source_md: Path, assets: Path, cfg: dict, provider, cache: Cache
         out += ["", f"## {part['title']} (pp. {labels[0]}–{labels[-1]})", ""]
         if i in reread:
             pieces = "whole" if reread[i] == 1 else f"in {reread[i]} pieces"
-            out += [f"> Read again by {fallback.model} ({pieces}) after {provider.model} repeated itself.", ""]
+            out += [f"> Read again by {reader.model} ({pieces}) after {provider.model} repeated itself "
+                    "or ran out of tokens.", ""]
         if looped:
-            out += ["> The model repeated itself here until it was cut off, so items from the later pages "
-                    "of this part may be missing. Search the book for them.", ""]
+            out += ["> The model repeated itself or ran out of tokens here and was cut off, so items from the "
+                    "later pages of this part may be missing. Search the book for them.", ""]
         out.append(mark_stray_pages(reply, labels))
     return "\n".join(out) + "\n", 0
 

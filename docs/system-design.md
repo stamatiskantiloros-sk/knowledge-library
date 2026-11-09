@@ -60,8 +60,8 @@ There are two layouts, chosen at setup and recorded as `library.mode`. Everythin
 
 ```
 <your folder>/
-  Ballas/inventory.pdf            the user's originals, never edited, moved or deleted
-  Ballas/inventory.pdf.md         its ingested text, frontmatter `generated_by: knowlib`
+  Lecturer/inventory.pdf            the user's originals, never edited, moved or deleted
+  Lecturer/inventory.pdf.md         its ingested text, frontmatter `generated_by: knowlib`
   Lecture 3/Lecture 3.lecture.md  a lecture folder (video and audio): the lecture, slide by slide
   textbook.pdf.digest.md          a long book's finding aid
   notes/                          synthesized topic notes, written by the agent
@@ -120,13 +120,15 @@ Its `.gitignore` excludes `.work/`, `archive/` and `inbox/`, so a library can be
 
 ## 6. Discovery: the router
 
-`discover()` walks `inbox/` depth first, skipping hidden names and `library.ignore` patterns. It returns `InputItem`s in the order **files, then URLs, then sessions**, so a lecture's slide PDF exists before the session that links to it.
+`discover()` walks `inbox/` depth first, skipping hidden names and `library.ignore` patterns. It returns `InputItem`s in the order **files, then image folders, then URLs, then sessions**, so a lecture's slide PDF exists before the session that links to it.
 
 **A session is one lecture, possibly several files:**
 - A folder with `session.yaml` is one session. `files:` can list members explicitly.
 - A folder with exactly one video and one or more audio files is one session, with no sidecar needed.
 - Any other media file is its own session. A subtitle file with the same stem attaches to it.
 - Two audio-only recordings of one lecture need a sidecar, because nothing else tells them from two lectures.
+
+**Loose images** (`.png .jpg .jpeg .webp .tif .tiff .bmp .gif`) directly in one folder become one item of kind `images`, keyed `<folder>/*images`, so 48 quiz screenshots are one source, not 48. Adding or changing a screenshot changes the folder's hash and updates that one source. HEIC photos are not read yet (convert them to JPEG). For a quiz screenshot the model lists every option on its own line and adds, in brackets, only what is shown beside it (`[selected]`, `[green check]`, `[red X]`), never what it thinks the marks mean; the OCR comparison leaves those brackets, "Figure:" lines and list numbering out.
 
 **URLs** come from `.url`, `.webloc`, `urls.txt` and `*.urls.txt`, one per line, with `#` lines ignored.
 
@@ -137,13 +139,13 @@ title: Corporate Finance - Lecture 4
 date: 2026-10-28
 language: el                       # el | en | mixed
 glossary: [WACC, ΔΕΣΦΑ, CAPM]      # or a path to a text file, one term per line
-primary_audio: zoom_h1.wav         # the best recording; otherwise picked by SNR
+primary_audio: recorder.wav         # the best recording; otherwise picked by SNR
 video: lecture.mp4                 # if the folder has several
 slides: slides.pdf                 # ingested alongside and linked
 local_only: true                   # block all API calls for this session
 fps: 2                             # for fast screen recordings
 tags: [finance]
-files: [lecture.mp4, zoom_h1.wav]  # explicit membership
+files: [lecture.mp4, recorder.wav]  # explicit membership
 frame_selection: {...}             # any full config section is accepted too
 ```
 
@@ -221,11 +223,15 @@ All use `first_working()`, which tries backends in order and turns an import err
 
 **PDF.** Docling, then Marker or PyMuPDF. Docling and PyMuPDF write the text page by page, each page starting with `<!-- page N (pdf M) -->`, where N is the number printed on the page (the PDF's page label) and M its place in the file, so notes can cite printed pages. Marker has no page markers. Docling leaves `<!-- formula-not-decoded -->` where it cannot read an equation; knowlib fills each gap with the PDF text layer inside the formula's box, in a ```` ```formula ```` block. The symbols survive but the layout does not, so a flag counts these formulas, and any gap the text layer cannot fill. Tables are written compact. `outline()` saves the PDF's bookmarks and its table and figure captions, with printed pages, to `assets/outline.json`. A caption is a line starting "Table 3.1" followed by nothing or a title in capitals. "Table 3.7 summarizes" and a sentence ending "Table 3.7." are mentions. A number that is only mentioned keeps its first mention's page, with no title. Then `_page_survey` checks every page: under 25 characters means no text layer; an image over 4% of the page or more than 40 drawings means a figure. Figure pages are rendered at 200 dpi into `assets/`, so charts remain available as images. Scanned pages are rendered too. If the backend's text is well above the text layer (more than 40 characters per scanned page), the backend's OCR is trusted and each page is flagged for checking. Otherwise knowlib OCRs them with Tesseract or a vision model.
 
+**Figures in PDFs** (`ingestors/figures.py`, Docling only). Docling marks each picture and its box; knowlib writes `<!-- figure P-K box -->` there, crops the box at 200 dpi, and skips, without a model, boxes under 60 pt or 2% of the page (icons, bullets), a picture that recurs on three or more pages (logos, running heads) and photos with no text in them (OCR finds fewer than three words in a picture that is not flat-coloured). The vision model (`pdf.figures.model`, then `images.model`, then the strong local model, `frame_selection` with its `caption_model`) reads the rest: every label and number exactly, tables, journal entries and T-accounts as Markdown tables with the account names in their cells, no headings or descriptions of colours and arrows, no estimate of a value that is not printed (a bar's length), and a "Figure:" line saying what a chart or diagram shows; it may answer DECORATIVE, which counts even after an explanation. The fast model was tried first on a 881-page textbook and flagged 176 of 255 readings: it dropped text beside tables, moved account names out of journal entries into its description and estimated unlabelled bars, so figures, being few, go to the strong model. Its text goes where the picture was, in a quote block under the cropped image, on its page, so a note cites it as `p. N` and check-notes can find its numbers. OCR checks each reading as for slides, without the reading's headings, code fences and dotted leaders, which OCR never sees; a sign that OCR spaced apart (`+ 3,000`) or dropped still matches, opposite signs do not. Skipped pictures stay as `<!-- image: small | repeated | photo without text | decorative -->`. An empty or cut-off reply is asked again, `pdf.figures.retries` (2) more times, with twice the tokens each time: it comes from the model spending `pdf.figures.max_tokens` (8000) thinking, from a big table that needs more room (a page of twelve MRP records stopped after seven at 4000), or from a thinking loop that the server stops early, and a loop is random (on the textbook, the model server looped on 12 of 246 plain journal entries and read each one at once when asked again). An empty reply after that is never taken as decorative: the figure is flagged as not read, its crop is kept beside `<!-- image: not read -->`, and nothing is cached, so the next run asks again. A reading that still stops at the limit ends `[CUT OFF ...]` and is flagged, and the next run asks again too. Before reading, `pdf.figures.detail_check` (`stop`, or `warn`, `off`) asks the server how many prompt tokens the largest crop still to be read gets, and a copy at half its width and height: a server that keeps the detail gives the full crop about four times as many, so under twice as many means it caps image tokens and the run stops with the fix. A capped llama.cpp server gave every figure about 290 tokens: a dense ROIC tree came back with ten wrong numbers, and with the cap raised to about 2,000 tokens (2 megapixels, enough for nearly every crop at 200 dpi) all 41 values were exact. Readings are cached by crop and prompt, and Docling's own output is cached by file hash in `work/docling/`, so reprocessing a book does not convert it again.
+
 **Office.** Documents use Docling, then Pandoc, which also extracts embedded images. Presentations are written slide by slide with `python-pptx`, in the same shape as video slides: image (LibreOffice to PDF to PNG, if installed), slide text, tables and speaker notes.
 
 **Web.** trafilatura extracts main content as Markdown, including tables and links. URL and fetch date are always stored, because pages change. A result under 400 characters is flagged. The Jina fallback is a third-party service, so it is removed under `local_only`, and for local files.
 
 **Text.** `.md`, `.txt`, code, notebooks and tables, so a lecture's exact code can be cited. Notebooks keep code and Markdown cells and drop outputs. CSV and TSV become a summary of shape, columns and the first 15 rows, not the whole file. Bodies are cut at 200,000 characters with a flag. Decoding tries UTF-8, then Windows Greek, then Latin-1.
+
+**Images.** `ingestors/images.py` writes `# <folder> (images)` and one `## Image N: <file name>` section per image, with a copy at `images.max_px` (1568) in `assets/`. The vision model (`images.model`, default `frame_selection`) transcribes each image with every number exact, lists every option of a multiple-choice question and says which is marked and whether it is shown correct, and adds a "Figure:" line for a chart. Classic OCR (`ocr_crosscheck`) reads the same copy; where the two disagree, above all on numbers, the image is flagged. Replies are cached in `work/images/read_cache.json` by file hash and model, so a rerun reads only new images. If the model fails, the OCR text is used and flagged. Notes cite `[@id, image N]`.
 
 ## 11. The media pipeline
 
@@ -408,7 +414,7 @@ knowlib stops at clean sources. `templates/CLAUDE.md` tells the agent what comes
 
 ## 16. Tests
 
-`tests/test_pipeline.py` runs end to end on generated fixtures with the mock provider. `tests/test_units.py` covers individual rules: IDs, grouping, alignment, OCR comparison, selection, handbook checks and the session reader. `tests/test_books.py` covers long PDFs on a generated six-page book: printed page markers from both backends, formula text from its box, the outline and captions, chapter splitting, loop detection, a digest written through the session reader, and a looped part read again in pieces by the fallback model. `tests/test_notes.py` builds a three-source library by hand and plants each problem the note checks look for, and checks that correct notes pass, then runs a review through the session reader and the `local_only` guard.
+`tests/test_pipeline.py` runs end to end on generated fixtures with the mock provider. `tests/test_units.py` covers individual rules: IDs, grouping, alignment, OCR comparison, selection, handbook checks and the session reader. `tests/test_books.py` covers long PDFs on a generated six-page book: printed page markers from both backends, formula text from its box, the outline and captions, chapter splitting, loop detection, a digest written through the session reader, and a looped part read again in pieces by the fallback model. `tests/test_notes.py` builds a three-source library by hand and plants each problem the note checks look for, and checks that correct notes pass, then runs a review through the session reader and the `local_only` guard. `tests/test_inplace.py` covers the in-place layout, setup, and a folder of screenshots read as one source and cited by image.
 
 ```bash
 .venv/bin/python -m pytest -q tests
@@ -533,6 +539,10 @@ ocr_crosscheck:
   - en-US
   tesseract_langs: ell+eng
   similarity_threshold: 0.75
+images:
+  describe: true
+  model: null
+  max_px: 1568
 pdf:
   backend: docling
   fallbacks:
@@ -541,6 +551,7 @@ pdf:
   render_figure_pages: true
   render_dpi: 200
   min_text_chars: 25
+  figures: {read: true, model: null, dpi: 200, min_side_pt: 60, min_page_share: 0.02, repeat_pages: 3}
 office:
   backend: docling
   fallbacks:

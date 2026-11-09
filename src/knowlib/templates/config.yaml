@@ -50,11 +50,22 @@ ocr_crosscheck:
   tesseract_langs: ell+eng
   similarity_threshold: 0.75
 
+images:                                # loose screenshots and photos: one source per folder
+  describe: true                       # the vision model reads each image; false = classic OCR only
+  model: null                          # a provider section; defaults to frame_selection
+  max_px: 1568
+
 pdf:
   backend: docling                     # docling | marker | pymupdf
   fallbacks: [pymupdf]
   scan_backend: tesseract              # tesseract | vision_llm | none
   render_figure_pages: true
+  figures:                             # charts and diagrams inside PDFs, read by the vision model
+    read: true
+    model: null                        # defaults to images.model, then the strong model (caption_model)
+    max_tokens: 8000                   # room for a big table and the model's thinking
+    retries: 2                         # ask again after an empty or cut-off reply, with twice the tokens each time
+    detail_check: stop                 # stop | warn | off: check the server does not cap image tokens first
 
 office:
   backend: docling                     # docling | pandoc

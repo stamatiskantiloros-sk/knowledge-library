@@ -50,7 +50,18 @@ def normalize(text: str) -> str:
 
 
 def numbers(text: str) -> list[str]:
-    return [n.strip(".,").replace(",", ".") for n in _NUM.findall(unicodedata.normalize("NFKC", text))]
+    text = re.sub(r"[–−]", "-", unicodedata.normalize("NFKC", text))
+    text = re.sub(r"(?<![\w.])([-+])\s+(?=\d)", r"\1", text)    # OCR often reads "+3,000" as "+ 3,000"
+    return [n.strip(".,").replace(",", ".") for n in _NUM.findall(text)]
+
+
+def _unmatched(a: set[str], b: set[str]) -> list[str]:
+    """Numbers in a that b lacks. A signed number matches the same number unsigned in b, and the other
+    way round, since one reader may drop a "+" the other kept; opposite signs never match."""
+    bare = {x for x in b if x[0] not in "+-"}
+    return sorted(x for x in a - b
+                  if not (x[0] in "+-" and x[1:] in bare)
+                  and not (x[0] not in "+-" and ("+" + x in b or "-" + x in b)))
 
 
 def compare(vlm_text: str, ocr_text: str, threshold: float) -> dict:
@@ -61,8 +72,8 @@ def compare(vlm_text: str, ocr_text: str, threshold: float) -> dict:
     ca, cb = Counter(a.split()), Counter(b.split())
     sim = 2 * sum((ca & cb).values()) / (sum(ca.values()) + sum(cb.values())) if a and b else 0.0
     na, nb = numbers(vlm_text), numbers(ocr_text)
-    only_vlm = sorted(set(na) - set(nb))
-    only_ocr = sorted(set(nb) - set(na))
+    only_vlm = _unmatched(set(na), set(nb))
+    only_ocr = _unmatched(set(nb), set(na))
     flag = (sim < threshold and len(b) > 20) or bool(only_vlm and nb) or bool(only_ocr and na)
     return {"similarity": round(sim, 3), "numbers_only_vlm": only_vlm[:10],
             "numbers_only_ocr": only_ocr[:10], "flag": bool(flag)}

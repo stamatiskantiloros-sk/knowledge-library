@@ -17,6 +17,8 @@ from pathlib import Path
 
 from .. import progress
 from ..contract import SourceRecord, hash_file, make_id, stage
+from .figures import marker as figure_marker
+from .figures import read_figures
 from .base import PDF_EXT, Context, Ingestor, IngestResult, InputItem, first_working, register
 
 FORMULA_GAP = "<!-- formula-not-decoded -->"
@@ -48,7 +50,16 @@ def _docling(path: Path, cfg: dict) -> str:
         for n, no in enumerate(sorted(doc.pages), 1):
             progress.stage("pages", n, len(doc.pages))
             md = doc.export_to_markdown(page_no=no, compact_tables=True)
+            height = pdf[no - 1].rect.height
+            k = 0
             for item, _ in doc.iterate_items(page_no=no):
+                if item.label == DocItemLabel.PICTURE and "<!-- image -->" in md:
+                    prov = next((p for p in item.prov if p.page_no == no), None)
+                    if prov:                               # where the picture is, for figures.read_figures
+                        k += 1
+                        box = prov.bbox.to_top_left_origin(height)
+                        md = md.replace("<!-- image -->", figure_marker(no, k, (box.l, box.t, box.r, box.b)), 1)
+                    continue
                 if item.label == DocItemLabel.FORMULA and not item.text and FORMULA_GAP in md:
                     prov = next((p for p in item.prov if p.page_no == no), None)
                     text = _formula_text(pdf, prov) if prov else ""
@@ -178,12 +189,20 @@ def ingest_pdf_file(path: Path, ctx: Context, *, origin: list[str], content_hash
     cfg = ctx.config
     pc = cfg["pdf"]
     backends = [pc["backend"], *[b for b in pc.get("fallbacks", []) if b != pc["backend"]]]
-    used, markdown, errors = first_working(backends, RUNNERS, path, cfg)
+    cached = ctx.work_for("docling") / f"{content_hash[:24]}.figures.md"     # Docling takes hours on a book
+    if pc["backend"] == "docling" and cached.exists():
+        used, markdown, errors = "docling", cached.read_text(encoding="utf-8"), []
+    else:
+        used, markdown, errors = first_working(backends, RUNNERS, path, cfg)
+        if used == "docling":
+            cached.write_text(markdown, encoding="utf-8")
     flags = [f"backend fallback: {e}" for e in errors]
     title = title or pdf_title(path, markdown)
     sid = make_id(title, content_hash)
     w = ctx.writer(sid)
     try:
+        markdown, fig_flags, fig_stats = read_figures(path, markdown, w, cfg, ctx.work_for("figures"))
+        flags += fig_flags
         survey = _page_survey(path, pc.get("min_text_chars", 25))
         scanned = [pg for pg in survey if pg["no_text"]]
         text_layer_chars = sum(pg["chars"] for pg in survey)
@@ -237,12 +256,16 @@ def ingest_pdf_file(path: Path, ctx: Context, *, origin: list[str], content_hash
                                                         "marker": "marker-pdf"}[used])}
         if renders:
             pipeline["page_render"] = stage("pymupdf", dpi=pc.get("render_dpi", 200))
+        if fig_stats.get("read"):
+            pipeline["figures"] = {"read": fig_stats["read"], "skipped": fig_stats.get("skipped", {}),
+                                   **({"model": fig_stats["model"]} if fig_stats.get("model") else {})}
         if ocr_tool and ocr_tool != "none":
             pipeline["scan_ocr"] = {"tool": ocr_tool}
         pipeline.update(extra_pipeline or {})
         rec = SourceRecord(id=sid, title=title, source_type=source_type, origin=origin,
                            hash=content_hash, pipeline=pipeline, flags=flags,
-                           stats={"pages": len(survey), "page_renders": len(renders)})
+                           stats={"pages": len(survey), "page_renders": len(renders), **(
+                               {"figures": fig_stats} if fig_stats.get("figures") else {})})
         md = w.commit(rec, "\n\n".join(body))
     except Exception:
         w.abort()

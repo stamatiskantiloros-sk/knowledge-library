@@ -5,7 +5,7 @@ separate  the original design: originals in inbox/, each source in sources/<id>/
           the top.
 inplace   the library is an existing folder of material, used as it is. Every original gets its
           Markdown beside it, named after the whole file name (inventory.pdf -> inventory.pdf.md,
-          a lecture folder X/ -> X/X.lecture.md), so it never collides with the user's own .md
+          a lecture folder X/ -> X/X.lecture.md, a folder's loose images -> X/X.images.md), so it never collides with the user's own .md
           files. Images, caches, the manifest and config.yaml live in one visible folder at the
           top (library.data, default _knowlib/). Notes, INDEX.md, glossary.md and AGENTS.md sit at
           the top as in separate mode.
@@ -58,6 +58,9 @@ class Layout:
         if item.kind == "session" and item.key.endswith("/"):
             folder = self.inbox / item.key.rstrip("/")
             return folder / f"{folder.name}.lecture.md"
+        if item.kind == "images":
+            folder = item.folder or self.inbox
+            return folder / f"{folder.name}.images.md"
         if item.kind == "url":
             slug = re.sub(r"[^a-z0-9]+", "-", re.sub(r"^https?://(www\.)?", "", item.url or "").lower()).strip("-")[:60]
             return (item.folder or self.inbox) / f"{slug}.web.md"
@@ -92,7 +95,7 @@ class Layout:
         """Delete a source's generated files (when its id changes)."""
         if self.inplace:
             md = self.source_md(source_id, entry)
-            if md.exists() and GENERATED_MARK in md.read_text(encoding="utf-8")[:2000]:
+            if md.exists() and self.is_generated(md):
                 md.unlink()
             shutil.rmtree(self.assets_dir(source_id), ignore_errors=True)
         else:
@@ -116,8 +119,15 @@ class Layout:
         """True for files knowlib wrote, so the crawler never ingests its own output."""
         if path.suffix.lower() != ".md":
             return False
-        try:
+        try:                     # anywhere in the frontmatter: older files have it after every flag
             with open(path, encoding="utf-8", errors="ignore") as f:
-                return GENERATED_MARK in f.read(2000)
+                if f.readline().strip() != "---":
+                    return False
+                for line in f:
+                    if line.strip() == "---":
+                        return False
+                    if line.startswith(GENERATED_MARK):
+                        return True
         except OSError:
-            return False
+            pass
+        return False

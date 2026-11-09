@@ -80,7 +80,7 @@ def build_session(folder: Path, tmp: Path) -> dict:
     s3b = slide(tmp / "s3b.png", "Capital structure", ["- Debt is cheaper than equity", "- But leverage raises risk"])
     rows = ["Year   Revenue   EBIT    Debt    Equity   WACC"] + \
            [f"{2018 + i}   {1200 + 87 * i}      {210 + 13 * i}     {640 + 25 * i}     {900 + 31 * i}     {7.9 + i / 10:.1f}%" for i in range(8)]
-    s4 = slide(tmp / "s4.png", "DESFA case: historical figures", rows, small=True)
+    s4 = slide(tmp / "s4.png", "Case study: historical figures", rows, small=True)
     sp = speaker(tmp / "sp.png", 1)
     timeline = [(s1, 20), (sp, 15), (s2, 25), (s3a, 10), (s3b, 20), (s4, 30)]   # 120 s
     lst = tmp / "concat.txt"
@@ -95,7 +95,7 @@ def build_session(folder: Path, tmp: Path) -> dict:
     ff("-f", "concat", "-safe", "0", "-i", str(lst), "-i", str(tmp / "cam.wav"), "-vf", "fps=25,format=yuv420p",
        "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-shortest", str(folder / "lecture.mp4"))
     write_wav(tmp / "rec.wav", 0.8 * src[: int(115 * SR)])
-    ff("-i", str(tmp / "rec.wav"), "-c:a", "aac", "-b:a", "128k", str(folder / "zoom_h1.m4a"))
+    ff("-i", str(tmp / "rec.wav"), "-c:a", "aac", "-b:a", "128k", str(folder / "recorder.m4a"))
 
     # the slide deck as an image-only PDF (no text layer: exercises the scan/OCR path)
     import fitz
@@ -106,7 +106,7 @@ def build_session(folder: Path, tmp: Path) -> dict:
     doc.save(folder / "slides.pdf")
     (folder / "session.yaml").write_text(
         "title: Corporate Finance - Lecture 4\ndate: 2026-10-28\nlanguage: en\n"
-        "glossary: [WACC, CAPM, DESFA]\nprimary_audio: zoom_h1.m4a\nslides: slides.pdf\ntags: [mba, finance]\n",
+        "glossary: [WACC, CAPM, NPV]\nprimary_audio: recorder.m4a\nslides: slides.pdf\ntags: [mba, finance]\n",
         encoding="utf-8")
     return {"lead_s": lead}
 

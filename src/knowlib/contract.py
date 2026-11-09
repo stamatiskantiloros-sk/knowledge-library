@@ -19,7 +19,7 @@ from typing import Any
 
 import yaml
 
-SOURCE_TYPES = {"pdf", "office", "web", "audio", "video", "session", "text"}
+SOURCE_TYPES = {"images", "pdf", "office", "web", "audio", "video", "session", "text"}
 
 # Greek -> Latin, so ids stay ASCII and work in any tool or URL.
 _GREEK = str.maketrans({
@@ -151,14 +151,18 @@ class SourceWriter:
         return p
 
     def commit(self, record: SourceRecord, body: str) -> Path:
-        meta = {**record.frontmatter(), "generated_by": "knowlib"}
+        fm = record.frontmatter()                     # the mark near the top, before a long list of flags
+        meta = {"id": fm.pop("id"), "generated_by": "knowlib", **fm} if "id" in fm else {"generated_by": "knowlib", **fm}
         body = body.strip()
         toc = contents(body)
         if toc:                                        # after the title line
             head, _, rest = body.partition("\n")
             body = f"{head}\n\n{toc}\n{rest.lstrip()}" if head.startswith("# ") else f"{toc}\n{body}"
         if self.inplace:
-            meta["original"] = self.md.relative_to(self.layout.root).as_posix()[:-3]
+            rel = self.md.relative_to(self.layout.root).as_posix()
+            # a lecture or image folder's Markdown stands for the whole folder
+            meta["original"] = (rel.rsplit("/", 1)[0] + "/" if "/" in rel else "./") \
+                if self.md.name.endswith((".lecture.md", ".images.md")) else rel[:-3]
             body = body.replace("](assets/", f"]({self.layout.asset_prefix(self.md, self.id)}/")
         fm = yaml.safe_dump(meta, allow_unicode=True, sort_keys=False, width=100)
         text = f"---\n{fm}---\n\n{body}\n"

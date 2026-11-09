@@ -57,7 +57,7 @@ def test_session_contract(lib):
     assert fm["original_date"] == "2026-10-28"
     for stage in ("session", "alignment", "transcription", "frames", "dedup", "frame_selection", "ocr_crosscheck"):
         assert stage in fm["pipeline"], stage
-    assert fm["pipeline"]["session"]["primary_audio"] == "zoom_h1.m4a"
+    assert fm["pipeline"]["session"]["primary_audio"] == "recorder.m4a"
     # alignment recovered the camera lead
     assert abs(fm["pipeline"]["alignment"]["offset_s"] - info["lead_s"]) < 0.15
     slides_id = next(e["source_id"] for e in rep["new"] if e["key"].endswith("slides.pdf"))

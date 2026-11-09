@@ -93,6 +93,7 @@ DEFAULTS: dict[str, Any] = {
         "min_pages": 100,                    # PDFs this long get a digest
         "max_chars": 120000,                 # one request per chapter, split when longer (~30K tokens)
         "max_tokens": 8000,
+        "retries": 1,                        # a part cut off at the token limit is asked again with twice the tokens
         "fallback_model": None,              # overrides for a stronger model that rereads a part the first one looped on
         "fallback_max_chars": 60000,         # it reads such a part in pieces this long
     },
@@ -103,12 +104,19 @@ DEFAULTS: dict[str, Any] = {
         # unlike the writer's, so they do not share blind spots.
         "max_tokens": 4000,
         "max_passage_chars": 8000,           # each cited passage is cut to this length
+        "retries": 1,                        # a reply cut off at the token limit is asked again with twice the tokens
     },
     "ocr_crosscheck": {
         "backends": ["apple-vision"],        # apple-vision | tesseract ; add tesseract as a third opinion
         "languages": ["el-GR", "en-US"],
         "tesseract_langs": "ell+eng",
         "similarity_threshold": 0.75,
+    },
+    "images": {
+        # loose images (screenshots, photos): one source per folder, one section per image
+        "describe": True,                    # the vision model reads each image; false = classic OCR only
+        "model": None,                       # a provider section; defaults to frame_selection
+        "max_px": 1568,                      # the copy kept in assets and read by the model
     },
     "pdf": {
         "backend": "docling",                # docling | marker | pymupdf
@@ -117,6 +125,17 @@ DEFAULTS: dict[str, Any] = {
         "render_figure_pages": True,
         "render_dpi": 200,
         "min_text_chars": 25,
+        "figures": {                         # pictures inside PDFs (Docling only), read by the vision model
+            "read": True,
+            "model": None,                   # a provider section; defaults to images.model, then the strong model (caption_model)
+            "max_tokens": 8000,              # a big table, plus the strong model's thinking; doubled on each retry
+            "retries": 2,                    # ask again after an empty or cut-off reply, with twice the tokens each time
+            "detail_check": "stop",          # stop | warn | off: before reading, check the server does not cap image tokens
+            "dpi": 200,
+            "min_side_pt": 60,               # smaller boxes are icons and bullets
+            "min_page_share": 0.02,          # so are boxes under 2% of the page
+            "repeat_pages": 3,               # the same picture on this many pages is a logo or header
+        },
     },
     "office": {
         "backend": "docling",                # docling | pandoc

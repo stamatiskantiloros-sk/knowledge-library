@@ -14,11 +14,14 @@ Replies are cached per reviewer model, so an unchanged note is not reviewed agai
 """
 from __future__ import annotations
 
+import re
+
 import json
 from dataclasses import asdict
 from pathlib import Path
 
 from .handbook.maker import Cache
+from .providers.openai_compat import NotEnoughMemory
 from .manifest import Manifest
 from .notecheck import Finding, Source, citations, claims, load_notes
 from .providers import get_vision_provider
@@ -65,7 +68,7 @@ def build(note, sources: dict, held: set[str], remote: bool, max_chars: int) -> 
         for sid, loc in cites:
             if (sid, loc) not in passages:
                 region = sources[sid].region(loc)[0] if sid in sources else None
-                body = "(missing: the source or place does not exist)" if region is None else region.strip()
+                body = "(missing: the source or place does not exist)" if region is None else re.sub(r"[ \t\u00a0\u2000-\u200b]{2,}", " ", region).strip()
                 if len(body) > max_chars:
                     body = body[:max_chars] + "\n(cut here)"
                 passages[(sid, loc)] = f"P{len(passages) + 1}"
@@ -108,14 +111,28 @@ def run(root: Path, *, note_slugs: list[str] | None = None, overrides: dict | No
             if prompt is None:
                 continue
             try:
-                reply = cache.ask(provider, prompt, int(section.get("max_tokens", 4000)))
+                reply, cut = cache.ask_checked(provider, prompt, int(section.get("max_tokens", 4000)),
+                                               retries=int(section.get("retries", 1)))
             except AgentPending:
                 pending += 1
+                continue
+            except NotEnoughMemory:
+                raise                                  # the model will not load at all: stop and say so
+            except (OSError, RuntimeError) as e:       # a timeout or a server error: skip this note, review the rest
+                findings.append(Finding("review", "warning", note.slug, f"not reviewed: the model server failed ({e}); run again"))
+                continue
+            if not reply:
+                why = (f"it used all {section.get('max_tokens', 4000)} tokens before answering (thinking); raise "
+                       "notes_review.max_tokens or set notes_review.reasoning_effort"
+                       if getattr(provider, "last_finish", None) == "length" else "it returned nothing")
+                findings.append(Finding("review", "warning", note.slug, f"not reviewed: {why}"))
                 continue
             try:
                 verdicts = {int(v["n"]): v for v in parse_json(reply).get("claims", [])}
             except (ValueError, KeyError, TypeError, AttributeError):
-                findings.append(Finding("review", "warning", note.slug, f"the reviewer's reply could not be read; rerun after deleting its entry in {cache.path.name}"))
+                why = ("it was cut off at the token limit; raise notes_review.max_tokens or split the note"
+                       if cut else f"rerun after deleting its entry in {cache.path.name}")
+                findings.append(Finding("review", "warning", note.slug, f"the reviewer's reply could not be read: {why}"))
                 continue
             for n, text in enumerate(texts, 1):
                 v = verdicts.get(n)

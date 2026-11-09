@@ -11,6 +11,9 @@ Session rules (one lecture = one session):
 Non-media files inside a session folder (e.g. the slide PDF) are routed on their own,
 before the session, so the session can link to them.
 
+Loose images (screenshots, photos) directly in one folder are one item of kind "images", keyed
+"<folder>/*images", so a folder of 48 quiz screenshots is one source rather than 48.
+
 URLs come from .url / .webloc files and from urls.txt (or *.urls.txt): one URL per line,
 lines starting with # are ignored.
 """
@@ -24,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-from .ingestors.base import (AUDIO_EXT, IGNORE_NAMES, SUBTITLE_EXT, URL_EXT, VIDEO_EXT,
+from .ingestors.base import (AUDIO_EXT, IGNORE_NAMES, IMAGE_EXT, SUBTITLE_EXT, URL_EXT, VIDEO_EXT,
                              InputItem)
 
 URL_RE = re.compile(r"^https?://\S+$", re.I)
@@ -74,6 +77,7 @@ def discover(inbox: Path, ignore: list[str] | None = None, skip=None) -> list[In
     files_first: list[InputItem] = []
     sessions: list[InputItem] = []
     urls: list[InputItem] = []
+    images: list[InputItem] = []
     seen_urls: set[str] = set()
 
     def visit(folder: Path) -> None:
@@ -103,6 +107,14 @@ def discover(inbox: Path, ignore: list[str] | None = None, skip=None) -> list[In
                                           folder=folder))
                 claimed.update([m, *attached])
 
+        pictures = [p for p in files if p.suffix.lower() in IMAGE_EXT and p not in claimed]
+        if pictures:
+            rel = _rel(folder, inbox)
+            images.append(InputItem(kind="images", key=("" if rel == "." else rel + "/") + "*images",
+                                    paths=pictures, folder=folder,
+                                    sidecar={"title": sidecar["images_title"]} if sidecar.get("images_title") else {}))
+            claimed.update(pictures)
+
         for f in files:
             if f in claimed:
                 continue
@@ -124,4 +136,4 @@ def discover(inbox: Path, ignore: list[str] | None = None, skip=None) -> list[In
 
     if inbox.exists():
         visit(inbox)
-    return files_first + urls + sessions
+    return files_first + images + urls + sessions

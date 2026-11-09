@@ -171,6 +171,13 @@ class Source:
                 return None, f"has no page {first if first not in self.pages else last}"
             i, j = self.page_order.index(first), self.page_order.index(last)
             return "\n".join(self.pages[p] for p in self.page_order[min(i, j):max(i, j) + 1]), ""
+        m = re.match(r"(?:image|img\.?)\s+(\d+)$", loc, re.I)
+        if m:
+            h = re.search(rf"^## Image {m[1]}:.*$", self.text, re.M)
+            if not h:
+                return None, f"has no image {m[1]}"
+            nxt = re.search(r"^## ", self.text[h.end():], re.M)
+            return self.text[h.start():h.end() + (nxt.start() if nxt else len(self.text))], ""
         m = re.match(r"slide\s+(\d+)(?:\s*,\s*([\d:]+))?$", loc, re.I)
         if m:
             n = int(m[1])
@@ -196,7 +203,7 @@ class Source:
                     nxt = re.search(rf"^#{{1,{len(h[1])}}} ", self.text[h.end():], re.M)
                     return self.text[h.start():h.end() + (nxt.start() if nxt else len(self.text))], ""
             return None, f"has no section '{m[1]}'"
-        return None, f"locator '{locator}' is not a page (p. 4), slide (slide 12, 14:32), time (23:10) or section (§ Heading)"
+        return None, f"locator '{locator}' is not a page (p. 4), slide (slide 12, 14:32), image (image 3), time (23:10) or section (§ Heading)"
 
     def neighbour(self, locator: str, values: set[float], quotes: list[str]) -> str:
         """The page a page off where the missing numbers and quotes are, if any."""

@@ -23,11 +23,11 @@ def scanned(path: Path) -> Path:
 
 @pytest.fixture
 def folder(tmp_path):
-    root = tmp_path / "Accounting"
-    (root / "Ballas" / "week 1").mkdir(parents=True)
+    root = tmp_path / "Course"
+    (root / "Lecturer" / "week 1").mkdir(parents=True)
     book(root / "textbook.pdf")
-    scanned(root / "Ballas" / "week 1" / "scan.pdf")
-    (root / "Ballas" / "notes.md").write_text("# My notes\n\nFIFO sends the oldest costs to cost of goods sold.\n")
+    scanned(root / "Lecturer" / "week 1" / "scan.pdf")
+    (root / "Lecturer" / "notes.md").write_text("# My notes\n\nFIFO sends the oldest costs to cost of goods sold.\n")
     (root / "_knowlib").mkdir()
     (root / "_knowlib" / "config.yaml").write_text(
         "library: {mode: inplace}\nframe_selection: {backend: mock}\npdf: {backend: pymupdf, fallbacks: []}\n"
@@ -38,18 +38,18 @@ def folder(tmp_path):
 def test_sources_land_beside_their_originals(folder):
     rep = process(folder)
     assert not rep["failed"], rep["failed"]
-    for out in ("textbook.pdf.md", "Ballas/notes.md.md", "Ballas/week 1/scan.pdf.md"):
+    for out in ("textbook.pdf.md", "Lecturer/notes.md.md", "Lecturer/week 1/scan.pdf.md"):
         text = (folder / out).read_text()
         assert "generated_by: knowlib" in text and f"original: {out[:-3]}" in text
     manifest = json.loads((folder / "_knowlib" / "manifest.json").read_text())["entries"]
-    scan = manifest["Ballas/week 1/scan.pdf"]
-    assert scan["output"] == "Ballas/week 1/scan.pdf.md"
+    scan = manifest["Lecturer/week 1/scan.pdf"]
+    assert scan["output"] == "Lecturer/week 1/scan.pdf.md"
     # the scan's page render lives under _knowlib/assets/<id>/ and its link climbs out of two folders
     render = folder / "_knowlib" / "assets" / scan["source_id"] / "page_001.png"
     assert render.exists()
     link = f"../../_knowlib/assets/{scan['source_id']}/page_001.png"
-    assert link in (folder / "Ballas/week 1/scan.pdf.md").read_text()
-    assert ((folder / "Ballas/week 1") / link).resolve() == render.resolve()
+    assert link in (folder / "Lecturer/week 1/scan.pdf.md").read_text()
+    assert ((folder / "Lecturer/week 1") / link).resolve() == render.resolve()
     assert not (folder / "sources").exists() and not (folder / "inbox").exists()
 
 
@@ -86,8 +86,8 @@ def test_notes_and_digests_work_in_place(folder):
 def test_setup_in_place_writes_answers_and_agent_files(tmp_path):
     from knowlib.setup import init
     root = tmp_path / "Course"
-    (root / "Ballas").mkdir(parents=True)
-    book(root / "Ballas" / "textbook.pdf")
+    (root / "Lecturer").mkdir(parents=True)
+    book(root / "Lecturer" / "textbook.pdf")
     cfg = init(root, mode="inplace", skip=["Old*"], local_only=False, language="en",
                fast="qwen-9b", strong="qwopus-27b", reviewer="gemma-12b", interactive=False)
     assert cfg == root / "_knowlib" / "config.yaml"
@@ -108,9 +108,9 @@ def test_setup_in_place_writes_answers_and_agent_files(tmp_path):
         "library: {mode: inplace}\nframe_selection: {backend: mock}\npdf: {backend: pymupdf, fallbacks: []}\n")
     process(root)
     index = (root / "INDEX.md").read_text()
-    assert "<!-- knowlib:sources -->" in index and "[textbook.pdf.md](Ballas/textbook.pdf.md)" in index
+    assert "<!-- knowlib:sources -->" in index and "[textbook.pdf.md](Lecturer/textbook.pdf.md)" in index
     row = json.loads((root / "_knowlib" / "sources.jsonl").read_text().splitlines()[0])
-    assert row["markdown"] == "Ballas/textbook.pdf.md" and row["size"] == "6 pages" and row["synthesized"] is False
+    assert row["markdown"] == "Lecturer/textbook.pdf.md" and row["size"] == "6 pages" and row["synthesized"] is False
     process(root)                                                 # the table is replaced, not appended
     assert (root / "INDEX.md").read_text().count("<!-- knowlib:sources -->") == 1
 
@@ -125,3 +125,58 @@ def test_setup_separate_keeps_the_classic_layout(tmp_path):
     import yaml
     assert yaml.safe_load((root / "config.yaml").read_text())["local_only"] is True
     assert not (root / "_knowlib").exists() and (root / "config.example.yaml").exists()
+
+
+def screenshot(path: Path, text: str) -> Path:
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.new("RGB", (900, 240), "white")
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 40)
+    except OSError:
+        font = ImageFont.load_default()
+    ImageDraw.Draw(img).text((30, 90), text, fill="black", font=font)
+    img.save(path)
+    return path
+
+
+def test_a_folders_screenshots_become_one_source(folder):
+    from knowlib import notecheck
+    qs = folder / "Ch12 Qs"
+    qs.mkdir()
+    screenshot(qs / "Screenshot 1.png", "Question 1: Inventory turnover is 6.5")
+    screenshot(qs / "Screenshot 2.png", "Question 2: Days to sell is 56")
+    rep = process(folder)
+    assert not rep["failed"], rep["failed"]
+    assert "Ch12 Qs/*images" in [n["key"] if isinstance(n, dict) else n for n in rep["new"]] or \
+        "Ch12 Qs/*images" in json.loads((folder / "_knowlib" / "manifest.json").read_text())["entries"]
+    md = (folder / "Ch12 Qs" / "Ch12 Qs.images.md").read_text()
+    assert "## Image 1: Screenshot 1.png" in md and "## Image 2: Screenshot 2.png" in md
+    assert "../_knowlib/assets/" in md and not any(k.endswith(".png") for k in rep["unsupported"])
+    sid = json.loads((folder / "_knowlib" / "manifest.json").read_text())["entries"]["Ch12 Qs/*images"]["source_id"]
+    assert sid.startswith("ch12-qs-images-")
+    (folder / "notes").mkdir(exist_ok=True)
+    (folder / "notes" / "turnover.md").write_text(f"---\ntitle: Turnover\nsources: [{sid}]\n---\n# Turnover\n\n## Key points\n"
+                                                   f"- Days to sell is 56 [@{sid}, image 2].\n"
+                                                   f"- Days to sell is 56 [@{sid}, image 1].\n")
+    (folder / "INDEX.md").write_text("# Index\n\n- [[turnover]]\n")
+    msgs = [f.message for f in notecheck.run(folder, only=["citations"]) if f.level != "info"]
+    assert len(msgs) == 1 and "image 1" in msgs[0] and "56" in msgs[0]
+    assert process(folder)["new"] == []                       # unchanged images are not read again
+    screenshot(qs / "Screenshot 3.png", "Question 3: FIFO")
+    assert [u for u in process(folder)["updated"]]            # a new screenshot updates the folder's source
+
+
+def test_output_with_a_long_frontmatter_is_never_ingested(folder):
+    """A book with hundreds of flags has a long frontmatter; its Markdown must still be recognized as
+    knowlib's own, both when the mark comes first (new files) and when it comes after every flag (older ones)."""
+    from knowlib.layout import open_layout
+    process(folder)
+    old = folder / "old.pdf.md"
+    old.write_text("---\nid: old-1\nflags:\n" + "".join(f"- 'flag {i} " + "x" * 80 + "'\n" for i in range(300))
+                   + "generated_by: knowlib\n---\n# Old\n")
+    lay = open_layout(folder)[0]
+    assert lay.is_generated(old) and lay.is_generated(folder / "textbook.pdf.md")
+    assert (folder / "textbook.pdf.md").read_text().splitlines()[2] == "generated_by: knowlib"
+    assert not lay.is_generated(folder / "Lecturer" / "notes.md")
+    rep = process(folder, force=True, only=["textbook.pdf"])
+    assert "old.pdf.md" not in json.dumps(rep["new"] + rep["updated"]), rep

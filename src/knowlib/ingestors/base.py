@@ -20,6 +20,7 @@ SUBTITLE_EXT = {".srt", ".vtt"}
 PDF_EXT = {".pdf"}
 OFFICE_EXT = {".docx", ".pptx", ".xlsx", ".odt", ".odp", ".rtf", ".doc", ".ppt"}
 HTML_EXT = {".html", ".htm"}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp", ".gif"}
 URL_EXT = {".url", ".webloc"}
 IGNORE_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini", "session.yaml", "session.yml"}
 
@@ -27,7 +28,7 @@ IGNORE_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini", "session.yaml", "sessio
 @dataclass
 class InputItem:
     """One unit of work: a single file, a media session (several files), or a URL."""
-    kind: str                     # "file" | "session" | "url"
+    kind: str                     # "file" | "session" | "url" | "images" (a folder's loose images)
     key: str                      # manifest key: inbox-relative path, session folder, or URL
     paths: list[Path] = field(default_factory=list)
     url: str | None = None

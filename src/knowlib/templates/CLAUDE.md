@@ -60,7 +60,7 @@ For each id from `knowlib pending`:
    - [[capm]], [[capital-structure]]
    ```
 
-4. **Every claim cites its source**: `[@<source-id>, <locator>]`, where the locator is a page (`p. 4`), a section (`§ Heading`), a slide and timestamp (`slide 12, 14:32`) or a timestamp alone for audio (`23:10`). No citation → do not write the claim.
+4. **Every claim cites its source**: `[@<source-id>, <locator>]`, where the locator is a page (`p. 4`), a section (`§ Heading`), a slide and timestamp (`slide 12, 14:32`), an image in a folder of screenshots (`image 3`) or a timestamp alone for audio (`23:10`). No citation → do not write the claim.
 5. Keep numbers, formulas and definitions exact; copy them from the source (or the image), never from memory.
 6. Where sources contradict each other, record both under "Disagreements" with citations; do not silently pick one.
 7. Update `glossary.md` (term, definition, Greek/English equivalents, source) and `{{INDEX}}` (topic → note, one line each; sources by course/project).

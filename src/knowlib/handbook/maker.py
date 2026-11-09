@@ -274,6 +274,9 @@ def drop_repeated_tables(text: str, previous: set[str]) -> tuple[str, set[str]]:
     return text, seen
 
 
+CUT_RE = re.compile(r"\n\[CUT OFF at (?:the token limit|(\d+) tokens)\]$")
+
+
 class Cache:
     """Finished model replies, so an interrupted book continues where it stopped."""
 
@@ -282,11 +285,33 @@ class Cache:
         self.data = json.loads(path.read_text()) if path.exists() else {}
 
     def ask(self, provider, prompt: str, tokens: int) -> str:
+        return self.ask_checked(provider, prompt, tokens, retries=0)[0]
+
+    def ask_checked(self, provider, prompt: str, tokens: int, retries: int = 1) -> tuple[str, bool]:
+        """(reply, whether the token limit cut it off). A cut-off reply is asked again with twice the
+        tokens, up to `retries` times. One still cut off is cached with the tokens it had, and asked
+        again only by a run that allows more."""
         key = hashlib.sha256(f"{provider.model}\n{prompt}".encode()).hexdigest()
-        if key not in self.data:
-            self.data[key] = provider.generate([], prompt, max_tokens=tokens).strip()
-            self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
-        return self.data[key]
+        most = tokens * 2 ** retries
+        hit = self.data.get(key)
+        if hit is not None:
+            m = CUT_RE.search(hit)
+            if not m:
+                return hit, False
+            if most <= int(m.group(1) or most):        # no more room than last time: the same answer
+                return hit[:m.start()], True
+        reply, cut, used = "", False, tokens
+        for n in range(1 + retries):
+            used = tokens * 2 ** n
+            reply = provider.generate([], prompt, max_tokens=used).strip()
+            cut = getattr(provider, "last_finish", None) == "length"
+            if reply and not cut:
+                break
+        if not reply:                             # e.g. the model spent every token thinking: ask again next run
+            return reply, cut
+        self.data[key] = reply + (f"\n[CUT OFF at {used} tokens]" if cut else "")
+        self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
+        return reply, cut
 
 
 def write_lecture(lecture: Lecture, materials: list[tuple[str, str]], provider, cfg: dict, out: Path) -> dict:
