@@ -580,3 +580,10 @@ def test_captions_and_section_endings_can_leave_out_recording_times():
             "*Slides 54–55, 1:30:30–1:35:05 (recording ends at the break)*")
     assert without_times(text) == ("![Slide 2](assets/s.png)\n\nSlide 2\n\n*Slides 1–2*\n"
                                    "*Slides 54–55 (recording ends at the break)*")
+
+
+def test_the_brief_calls_the_speaker_what_the_library_asks(tmp_path):
+    from knowlib.handbook.maker import Lecture, Slide, brief
+    lec = Lecture("lec", "L/", "Lecture 1", tmp_path, [Slide(1, "0:00", "1:00", text="Title")])
+    out = brief(lec, [], speaker="the professor")
+    assert 'Call the speaker "the professor"' in out and "the lecturer" not in out.split("## Slides")[0]

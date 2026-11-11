@@ -91,6 +91,7 @@ DEFAULTS: dict[str, Any] = {
     "handbook": {                        # overrides of frame_selection for the writing model
         "language": "English",
         "style_file": None,                  # a CSS file (relative to the library) for the PDF; None: the plain default
+        "speaker": "the lecturer",           # what the book calls the person teaching ("the professor", ...)
         "byline": None,                      # one line under the title, e.g. who made it
         "signature": None,                   # a line at the foot of every page and at the end
         "tagline": None,                     # a line printed at the end

@@ -65,7 +65,7 @@ BRIEF_RULES = """You are writing the study book of one recorded lecture, for a s
 
 1. Read every slide below in order, then write draft.md beside this brief: a # title, then ## sections in the order taught. The chapter breaks are yours.
 2. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
-3. Stay faithful. Keep the lecturer's definitions, examples and reasoning, and give a topic as much space as it got in class. Remove filler and repetition. Each topic appears once.
+3. Stay faithful. Keep the lecturer's definitions, examples and reasoning, and give a topic as much space as it got in class, never more. Remove filler and repetition. Each topic appears once.
 4. Write only what the lecture contains: no links ahead, summaries or comments on the method. Attribute to the lecturer only what the transcript says. "What it shows" is an automatic description, never a source of claims.
 5. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said.
 6. If the lecturer says something wrong, keep it and add a note saying so, plainly.
@@ -74,6 +74,10 @@ BRIEF_RULES = """You are writing the study book of one recorded lecture, for a s
 9. End each section with its slides and times in italics. Call the speaker "the lecturer", without he or she.
 10. Name no one. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone in the room, even where the transcript or a slide shows one ([a person] marks a name taken out).
 11. A slide marked "Not discussed in the recording" was not taught in what was recorded: leave it out. Where a section cannot make sense without it, say in one line that the slide was shown but not discussed.
+12. Be condensed: the book follows the lecture's order, it is not an essay. Terse bullets, one idea each; fragments are fine. No restating, no connective prose, no anecdotes or class chatter that carry no idea, no explaining what the lecturer did not explain. Course admin only as far as a student must know it: grading, exam format and allowed aids, required readings, textbooks in one line. As a guide, write about a third of the transcript's length or less (roughly 30 words per minute of lecture).
+13. Let the arrangement show where things come from. Never write "on the slide", "the slide says", "(slide)" or "Slide:": what the slides show is the default, and the [[slide N]] lines and section endings already point to them. Mark only the lecturer's own additions, where it matters, by structure or a short lead ("the lecturer added", "with the lecturer's examples in brackets").
+14. Plain words a student understands without decoding: no shorthand labels or symbols in place of words ("Pick:", "=", "vs" as a verb); say "the lecturer's top priority", "means", "compared with".
+15. State things exactly as strongly as the source does: keep its hedges and its wording of degree ("that's a problem", not "it fails"; "can", "often", "may"). Do not upgrade an example into a rule or a reason into a definition.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>"""
 
@@ -546,14 +550,17 @@ def prepare(root: Path, output: Path, *, input_dir: Path | None = None, only: li
         out.mkdir(parents=True, exist_ok=True)
         (out / ".lecture.json").write_text(json.dumps({"folder": str(md), "source_id": e["source_id"], "key": key}))
         (out / "brief.md").write_text(brief(lecture, materials, notes_dir=ctx.layout.notes,
-                                            names=privacy.names(ctx.config)), encoding="utf-8")
+                                            names=privacy.names(ctx.config),
+                                            speaker=(ctx.config.get("handbook") or {}).get("speaker") or "the lecturer"),
+                                      encoding="utf-8")
         briefs.append(str(out / "brief.md"))
     return briefs
 
 
 def brief(lecture: Lecture, materials: list[tuple[str, str]], *, notes_dir: Path | None = None,
-          names: list[str] | None = None) -> str:
-    lines = [f"# Brief: {lecture.title}", "", BRIEF_RULES, "", "## Slides", ""]
+          names: list[str] | None = None, speaker: str = "the lecturer") -> str:
+    rules = BRIEF_RULES.replace("the lecturer", speaker).replace("The lecturer", speaker[:1].upper() + speaker[1:])
+    lines = [f"# Brief: {lecture.title}", "", rules, "", "## Slides", ""]
     for s in lecture.slides:
         lines += [f"### Slide {s.n} ({s.start}–{s.end})", "", f"Image: {lecture.folder / s.frame}"]
         if not s.discussed:

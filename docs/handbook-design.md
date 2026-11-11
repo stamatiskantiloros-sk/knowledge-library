@@ -288,3 +288,25 @@ The operating procedure for agents is Procedure 3 in the library's `CLAUDE.md`, 
 - A recurring-text filter still lets some interface text through.
 - A failed frame reading leaves junk OCR in `source.md`, as on one test lecture's first slide. The handbook leaves it out or reads the image.
 - Web pages with almost no content, and CSV files whose delimiter cannot be detected, fail ingestion. This is harmless for placeholder pages, but failures should be read.
+
+## 16. Lessons from the first full handbook
+
+A 95-minute lecture recorded as audio only, with a 65-slide deck, went through every step below, one step at a time, each inspected before the next started.
+
+**Ingestion**
+- Audio without video: `session.yaml` names the deck (`slides:`), `skip_slides` leaves out what must never be used (a class list), and the aligner matches speech to slides by their text. Its boundaries are often 10–30 s late, so every boundary is checked against the transcript and the slide text and recorded in `slide_starts`, each with a short quote, so reruns keep them.
+- Transcription on the machine, full `large-v3` over turbo for names and terms; `start_s` skips the room before class; the glossary (terms taken from the slides) is kept on every Whisper window, which corrected most misheard company names.
+- Figures go to a remote model only after local OCR finds no personal information on them.
+
+**Writing and review**
+- One model writes (a session model), a different family reviews, and the strongest model judges every flag against the slides and transcript before anything changes; a writer never judges its own text.
+- The review is section by section, one section or note per request: batching six notes per request caught 5 of 16 planted errors, one per request caught 12.
+- Names, emails and personal details are taken out of everything sent to a remote model and out of the book; the finish step checks the text and, by OCR, every image.
+- Condensing is its own pass, and is reviewed again: it reintroduced two overstatements the first review had fixed.
+- The flags worth acting on were nearly all overstatements: a hedge dropped, an example turned into a rule, a reason called a definition, a lecturer's addition credited to the slide. Rules 12–15 of the brief come from these and from the reader's notes: be condensed, let the layout show the source (never "on the slide"), plain words instead of shorthand labels, and no stronger than the source.
+
+**Length and layout**
+- About 2,700 words for 95 minutes of lecture read well: roughly 30 words per minute, a third of the transcript.
+- Page count is mostly layout: the same text took 22 pages with full-width slides and 8 in two columns with slides at column width. Showing several styles side by side, then a live palette and typeface picker on the chosen layout, made the choice easy.
+- The PDF is checked page by page: no slide split across pages, no text squeezed beside stacked slides, no near-empty last page, one typeface throughout. Justified columns need the page language declared, or Chrome does not hyphenate and leaves wide gaps.
+- Recording times are left out of captions and section endings when the reader does not need them (`show_times: false`); a byline goes once under the title, not on every page.
