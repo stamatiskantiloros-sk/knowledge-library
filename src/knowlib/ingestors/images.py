@@ -58,10 +58,16 @@ def read_image(path: Path, view: Path, provider, cache: dict, cfg: dict) -> tupl
         texts = [t for t in (_ocr(n, view, oc) for n in oc.get("backends", [])) if t]
         return (texts[0] if texts else ""), ",".join(oc.get("backends", [])) or "none", flags
     prompt_v = hashlib.sha256(READ_PROMPT.encode()).hexdigest()[:8]
-    key = f"{hash_file(path)}:{provider.backend}:{provider.model}:{prompt_v}"
+    backend = "openai" if provider.backend == "chain" else provider.backend   # a chain's members are servers
+    candidates = [f"{hash_file(path)}:{backend}:{m}:{prompt_v}"
+                  for m in (getattr(provider, "cache_models", None) or [provider.model])]
+    key = next((k for k in candidates if k in cache), candidates[0])
     if key not in cache:
         try:
-            cache[key] = provider.generate([view], READ_PROMPT).strip()
+            reply = provider.generate([view], READ_PROMPT).strip()
+            if getattr(provider, "answered_by", None):
+                key = f"{hash_file(path)}:{backend}:{provider.answered_by}:{prompt_v}"
+            cache[key] = reply
         except (OSError, RuntimeError) as e:          # the model is gone or would not load: OCR instead
             log.warning("vision model failed on %s (%s); using OCR", path.name, e)
             texts = [t for t in (_ocr(n, view, oc) for n in oc.get("backends", [])) if t]

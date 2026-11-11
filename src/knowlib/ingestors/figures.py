@@ -204,8 +204,15 @@ def _read(todo: list[str], crops: dict, cfg: dict, work: Path, stats: dict) -> t
     cache_path = work / "figures_cache.json"
     cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
     prompt_v = hashlib.sha256(FIGURE_PROMPT.encode()).hexdigest()[:8]
-    keys = {t: f"{hashlib.sha256(crops[t][0].read_bytes()).hexdigest()}:{provider.backend}:{provider.model}:{prompt_v}"
-            for t in todo}
+    backend = "openai" if provider.backend == "chain" else provider.backend   # a chain's members are servers
+    models = getattr(provider, "cache_models", None) or [provider.model]
+    digests = {t: hashlib.sha256(crops[t][0].read_bytes()).hexdigest() for t in todo}
+
+    def key_for(t: str, model) -> str:
+        return f"{digests[t]}:{backend}:{model}:{prompt_v}"
+
+    keys = {t: next((k for k in (key_for(t, m) for m in models) if k in cache and not cache[k].endswith(CUT_OFF)),
+                    key_for(t, models[0])) for t in todo}
     to_ask = [crops[t][0] for t in todo if keys[t] not in cache or cache[keys[t]].endswith(CUT_OFF)]
     readings, flags = {}, []
     try:
@@ -241,6 +248,8 @@ def _read(todo: list[str], crops: dict, cfg: dict, work: Path, stats: dict) -> t
                     continue
                 if getattr(provider, "last_finish", None) == "length":
                     reply += "\n\n" + CUT_OFF
+                if getattr(provider, "answered_by", None):          # a chain: under the model that read it
+                    key = keys[text] = key_for(text, provider.answered_by)
                 cache[key] = reply
                 cache_path.write_text(json.dumps(cache, ensure_ascii=False))
             reply = cache[key]

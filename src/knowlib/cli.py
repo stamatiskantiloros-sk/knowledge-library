@@ -97,6 +97,8 @@ def cmd_models(args) -> int:
             ok, msg = models.check(cfg, role, full=True)
             bad += not ok
             line += f"\n          {'ok' if ok else 'PROBLEM'}: {msg}"
+        for u in models.usage(cfg, role):
+            line += f"\n          {u}"
         print(line)
     return 1 if bad else 0
 

@@ -281,8 +281,10 @@ class Cache:
     """Finished model replies, so an interrupted book continues where it stopped."""
 
     def __init__(self, path: Path):
+        import threading
         self.path = path
         self.data = json.loads(path.read_text()) if path.exists() else {}
+        self._lock = threading.Lock()
 
     def ask(self, provider, prompt: str, tokens: int) -> str:
         return self.ask_checked(provider, prompt, tokens, retries=0)[0]
@@ -291,9 +293,11 @@ class Cache:
         """(reply, whether the token limit cut it off). A cut-off reply is asked again with twice the
         tokens, up to `retries` times. One still cut off is cached with the tokens it had, and asked
         again only by a run that allows more."""
-        key = hashlib.sha256(f"{provider.model}\n{prompt}".encode()).hexdigest()
+        models = getattr(provider, "cache_models", None) or [provider.model]
+        keys = [hashlib.sha256(f"{m}\n{prompt}".encode()).hexdigest() for m in models]
+        key = keys[0]
         most = tokens * 2 ** retries
-        hit = self.data.get(key)
+        hit = next((self.data[k] for k in keys if k in self.data), None)
         if hit is not None:
             m = CUT_RE.search(hit)
             if not m:
@@ -309,9 +313,26 @@ class Cache:
                 break
         if not reply:                             # e.g. the model spent every token thinking: ask again next run
             return reply, cut
-        self.data[key] = reply + (f"\n[CUT OFF at {used} tokens]" if cut else "")
-        self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
+        answered = getattr(provider, "answered_by", None)     # a chain: store it under the model that wrote it
+        if answered and answered != models[0]:
+            key = hashlib.sha256(f"{answered}\n{prompt}".encode()).hexdigest()
+        self.put(key, reply + (f"\n[CUT OFF at {used} tokens]" if cut else ""))
         return reply, cut
+
+    @staticmethod
+    def key(model, prompt: str) -> str:
+        return hashlib.sha256(f"{model}\n{prompt}".encode()).hexdigest()
+
+    def lookup(self, provider, prompt: str) -> str | None:
+        """A cached reply to this prompt from any model the provider may answer with."""
+        models = getattr(provider, "cache_models", None) or [provider.model]
+        return next((self.data[k] for k in (self.key(m, prompt) for m in models) if k in self.data), None)
+
+    def put(self, key: str, value: str) -> None:
+        """Store one reply and save the file (safe from several threads)."""
+        with self._lock:
+            self.data[key] = value
+            self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
 
 
 def write_lecture(lecture: Lecture, materials: list[tuple[str, str]], provider, cfg: dict, out: Path) -> dict:

@@ -39,7 +39,7 @@ ROLES = {
 SESSION_MODELS = ("haiku", "sonnet", "opus")
 LMSTUDIO_URL = "http://localhost:1234/v1"
 PROVIDER_KEYS = ("backend", "base_url", "openai_model", "api_key_env", "manage_lms", "agent_model", "model",
-                 "ollama_model", "api_model", "context_length", "parallel")
+                 "ollama_model", "api_model", "context_length", "parallel", "chain", "api_key_file")
 COMMANDS = {"process": ["reading"], "reprocess": ["reading"], "digest": ["digest"], "review-notes": ["review"],
             "handbook": ["reading", "handbook"]}
 
@@ -67,6 +67,8 @@ def describe(sec: dict) -> str:
     b = sec.get("backend", "mlx-vlm")
     if b == "agent":
         return f"session: {sec.get('agent_model', 'sonnet')}"
+    if b == "chain":
+        return "chain: " + " → ".join(map(str, sec.get("chain") or []))
     if b == "openai":
         if sec.get("manage_lms"):
             return f"LM Studio: {sec.get('openai_model')}"
@@ -89,10 +91,16 @@ def summary(cfg: dict, roles=ROLES) -> dict[str, str]:
 # ---- choosing: specs and the config they write ------------------------------------------------
 
 def parse_spec(spec: str) -> dict | None:
-    """'session:sonnet' | 'lmstudio:<model>' | 'server:<base_url>|<model>[|<key env var>]' | 'default'."""
+    """'session:sonnet' | 'lmstudio:<model>' | 'server:<base_url>|<model>[|<key env var>]' |
+    'chain:<provider>/<model>,<provider>/<model>,...' | 'default'."""
     kind, _, rest = spec.partition(":")
     if kind == "default":
         return None
+    if kind == "chain":
+        entries = [e.strip() for e in rest.split(",") if e.strip()]
+        if not entries or any("/" not in e for e in entries):
+            raise ValueError("chain:<provider>/<model>,<provider>/<model>,... (providers from `providers:` in the config)")
+        return {"backend": "chain", "chain": entries}
     if kind == "session":
         if rest not in SESSION_MODELS:
             raise ValueError(f"session model must be one of {', '.join(SESSION_MODELS)}")
@@ -109,7 +117,7 @@ def parse_spec(spec: str) -> dict | None:
         if len(parts) > 2 and parts[2]:
             sec["api_key_env"] = parts[2]
         return sec
-    raise ValueError(f"unknown provider {spec!r}: use session:, lmstudio:, server: or default")
+    raise ValueError(f"unknown provider {spec!r}: use session:, lmstudio:, server:, chain: or default")
 
 
 def _clear(d: dict) -> dict:
@@ -201,8 +209,32 @@ def check(cfg: dict, role: str, *, full: bool = False) -> tuple[bool, str]:
         if cfg.get("local_only"):
             return False, "local_only is set, so nothing may go to a session model"
         return True, "session model (no check needed)"
+    if b == "chain":
+        from .providers.chain import member_sections
+        try:
+            members = member_sections(sec, cfg)
+        except ValueError as e:
+            return False, str(e)
+        if cfg.get("local_only") and any(urlparse_host(m["section"]) not in LOCAL_HOSTS for m in members):
+            return False, "local_only is set, and this chain reaches models off this machine"
+        results = [(m["key"], *_check_server(m["section"], role, cfg, full=False)) for m in members]
+        good = [k for k, ok, _ in results if ok]
+        msg = "; ".join(f"{k}: {'ok' if ok else m}" for k, ok, m in results)
+        return bool(good), msg
     if b != "openai":
         return True, f"{b}: not checked"
+    return _check_server(sec, role, cfg, full=full)
+
+
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def urlparse_host(sec: dict) -> str:
+    from urllib.parse import urlparse
+    return urlparse(sec.get("base_url", "")).hostname or ""
+
+
+def _check_server(sec: dict, role: str, cfg: dict, *, full: bool) -> tuple[bool, str]:
     if sec.get("manage_lms"):
         from .setup import lmstudio_models
         keys = [m.get("modelKey") for m in lmstudio_models()]
@@ -211,8 +243,9 @@ def check(cfg: dict, role: str, *, full: bool = False) -> tuple[bool, str]:
         if sec.get("openai_model") not in keys:
             return False, f"{sec.get('openai_model')} is not downloaded in LM Studio"
         return True, "in LM Studio (loaded when needed)"
+    from .providers.openai_compat import _key_file
     env = sec.get("api_key_env") or "OPENAI_API_KEY"
-    key = os.environ.get(env, "none")
+    key = os.environ.get(env) or _key_file(sec) or "none"
     base = sec.get("base_url", "").rstrip("/")
     try:
         listed = _get(f"{base}/models", key).get("data", [])
@@ -340,3 +373,13 @@ def choose(cfg: dict) -> dict[str, dict | None]:
         elif pick == "4":
             changes[role] = None
     return changes
+
+
+def usage(cfg: dict, role: str) -> list[str]:
+    """For a chain: each model's requests today against its daily limit."""
+    sec = section(cfg, role)
+    if sec.get("backend") != "chain":
+        return []
+    from .providers import quota
+    from .providers.chain import member_sections
+    return quota.report([(m["key"], m["limits"], m["tz"]) for m in member_sections(sec, cfg)])

@@ -207,3 +207,18 @@ def test_a_request_that_never_finishes_stops_at_the_deadline():
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_a_chain_role_is_saved_described_and_checked_member_by_member(tmp_path):
+    srv = Server([{"id": "models/lite"}])
+    try:
+        root = library(tmp_path, f"providers:\n  g:\n    base_url: {srv.url}\n    models: {{lite: {{rpd: 500}}}}\n")
+        models.save(root, {"review": models.parse_spec("chain:g/missing,g/lite")})
+        cfg = load_config(root)
+        assert models.describe(models.section(cfg, "review")) == "chain: g/missing → g/lite"
+        ok, msg = models.check(cfg, "review")
+        assert ok and "g/lite: ok" in msg and "does not serve missing" in msg
+    finally:
+        srv.close()
+    with pytest.raises(ValueError, match="provider"):
+        models.parse_spec("chain:lite")

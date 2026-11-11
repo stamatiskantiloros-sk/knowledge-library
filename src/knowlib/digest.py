@@ -146,6 +146,65 @@ def merge(replies: list[str]) -> str:
     return "\n\n".join(f"{h}\n" + ("\n".join(items) or "(none)") for h, items in heads.items())
 
 
+BATCH_PROMPT = """Below are {n} separate tasks, each between its === TASK lines; each asks for the digest of one part of a book. Do every task exactly as it says, using only that task's own text.
+
+Write the digests in task order. Begin each with a line holding only "=== DIGEST <task number> ===", then that digest with its three headings. Write nothing else.
+
+{tasks}"""
+
+HEADINGS = ("### Key terms", "### Formulas", "### Worked examples")
+DIGEST_MARK = re.compile(r"^=== DIGEST (\d+) ===\s*$", re.M)
+
+
+def digest_in_batches(prompts: list[str], provider, cache: Cache, dc: dict) -> int:
+    """Ask a long-context API model for several parts' digests per request, up to its token budget,
+    and cache each digest under that part's own prompt, so the per-part pass finds it. A part whose
+    digest is missing, incomplete or cut off is left for the per-part pass. Returns how many were done."""
+    from .providers.chain import estimate_tokens
+    budget = provider.budget()
+    if budget <= 0 or len(prompts) < 2:
+        return 0
+    most, out_cap = int(dc.get("batch_parts", 4)), int(dc.get("batch_max_tokens", 60000))
+    batches, cur, size = [], [], 0
+    for p in prompts:
+        t = estimate_tokens(p) + 30
+        if cur and (size + t > budget or len(cur) >= most):
+            batches.append(cur)
+            cur, size = [], 0
+        cur.append(p)
+        size += t
+    batches.append(cur)
+    done = 0
+    for b, batch in enumerate(batches, 1):
+        if len(batch) == 1:
+            continue
+        log.info("digest: batch %d/%d, %d parts", b, len(batches), len(batch))
+        tasks = "\n\n".join(f"=== TASK {n} ===\n{p}\n=== END TASK {n} ===" for n, p in enumerate(batch, 1))
+        try:
+            reply = provider.generate([], BATCH_PROMPT.format(n=len(batch), tasks=tasks), max_tokens=out_cap)
+        except (OSError, RuntimeError) as e:
+            if isinstance(e, NotEnoughMemory):
+                raise
+            log.warning("digest batch %d failed (%s); its parts go one at a time", b, str(e)[:120])
+            if "no model in the chain" in str(e):
+                break
+            continue
+        cut = getattr(provider, "last_finish", None) == "length"
+        marks = list(DIGEST_MARK.finditer(reply))
+        for k, m in enumerate(marks):
+            n = int(m.group(1))
+            if not 1 <= n <= len(batch):
+                continue
+            last = k + 1 == len(marks)
+            if last and cut:
+                continue                               # the token limit cut this one off
+            text = reply[m.end():marks[k + 1].start() if not last else len(reply)].strip()
+            if all(h in text for h in HEADINGS):
+                cache.put(cache.key(provider.answered_by or provider.model, batch[n - 1]), text)
+                done += 1
+    return done
+
+
 def digest_book(source_md: Path, assets: Path, cfg: dict, provider, cache: Cache, fallback=None) -> tuple[str | None, int]:
     """(digest text, pending jobs). The text is None while session jobs are still unanswered.
     A part the provider repeats itself on is read again by the fallback provider, in smaller pieces,
@@ -159,19 +218,24 @@ def digest_book(source_md: Path, assets: Path, cfg: dict, provider, cache: Cache
     label = lambda p: pg.get(p, (str(p), ""))[0]
     tokens = int(dc.get("max_tokens", 8000))
 
-    def ask(model, i: int, first: int, last: int) -> tuple[str, bool]:
+    def prompt_for(i: int, first: int, last: int) -> str:
         # the prompt depends only on its own pages, so re-splitting the book keeps the other parts cached
         span = range(first, last + 1)
         where = f"a part (\"{chunks[i]['title']}\", pages {label(first)}–{label(last)})"
         text = "\n\n".join(f"=== Page {label(p)} ===\n{pg.get(p, ('', ''))[1]}" for p in span)
-        reply, cut = cache.ask_checked(model, DIGEST_PROMPT.format(where=where, title=fm.get("title", ""), text=text),
-                                       tokens, retries=int(dc.get("retries", 1)))
+        return DIGEST_PROMPT.format(where=where, title=fm.get("title", ""), text=text)
+
+    def ask(model, i: int, first: int, last: int) -> tuple[str, bool]:
+        reply, cut = cache.ask_checked(model, prompt_for(i, first, last), tokens, retries=int(dc.get("retries", 1)))
         reply, looped = drop_repeats(reply.strip())
         lines = reply.splitlines()
         if cut and lines and not lines[-1].rstrip().endswith((".", ")", "⚠", "(none)")):
             reply = "\n".join(lines[:-1])             # the item the token limit cut off
         return reply, looped or cut
 
+    if hasattr(provider, "budget") and dc.get("batch", True):
+        todo = [prompt_for(i, part["first"], part["last"]) for i, part in enumerate(chunks)]
+        digest_in_batches([p for p in todo if cache.lookup(provider, p) is None], provider, cache, dc)
     replies: dict[int, tuple[str, bool]] = {}
     pending = 0
     for i, part in enumerate(chunks):
@@ -213,7 +277,8 @@ def digest_book(source_md: Path, assets: Path, cfg: dict, provider, cache: Cache
     if pending:
         return None, pending
 
-    by = f"{provider.model} one part at a time"
+    by = (f"{provider.model} one part at a time" if provider.backend != "chain" else
+          f"API models in a chain ({', '.join(provider.cache_models)}), several parts per request where they fit")
     if reread:
         by += f"; the {len(reread)} parts it repeated itself on or ran out of tokens in were read again by {reader.model}"
     out = ["# Digest: " + fm.get("title", source_md.stem), "",

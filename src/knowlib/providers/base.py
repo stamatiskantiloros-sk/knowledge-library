@@ -101,9 +101,16 @@ def get_vision_provider(section: dict, cfg: dict) -> VisionProvider:
             raise LocalOnlyViolation("local_only is set; refusing to send frames through the session.")
         from .agent import AgentProvider
         return AgentProvider(section, Path(cfg["agent_dir"]))
+    if backend == "chain":
+        key = (backend, tuple(section.get("chain") or ()), section.get("max_tokens"), section.get("reasoning_effort"))
     if key in _CACHE:
         return _CACHE[key]
-    if backend == "openai":
+    if backend == "chain":
+        from .chain import ChainProvider
+        prov = ChainProvider(section, cfg)
+        if not prov.is_local and cfg.get("local_only"):
+            raise LocalOnlyViolation("local_only is set and this role's chain reaches models off this machine")
+    elif backend == "openai":
         from .openai_compat import OpenAICompatProvider
         prov: VisionProvider = OpenAICompatProvider(section)
         if not prov.is_local and cfg.get("local_only"):

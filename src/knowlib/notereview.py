@@ -15,6 +15,7 @@ Replies are cached per reviewer model, so an unchanged note is not reviewed agai
 from __future__ import annotations
 
 import re
+import sys
 
 import json
 from dataclasses import asdict
@@ -49,7 +50,57 @@ Judge only against the passages, never your own knowledge of the subject, even w
 Reply with JSON only:
 {{"claims": [{{"n": 1, "verdict": "supported", "reason": "one sentence, quoting the words that decide it"}}]}}"""
 
+BATCH_PROMPT = """Below are {n} separate review tasks, one per study note, each between its === lines. Do each task exactly as it says, judging each note's claims only against that note's own passages.
+
+Reply with JSON only: one entry per task id, each holding exactly the JSON that task asks for:
+{{"notes": {{"<task id>": {{"claims": [{{"n": 1, "verdict": "supported", "reason": "..."}}]}}}}}}
+
+{tasks}"""
+
 LEVEL = {"unsupported": "error", "partly": "warning", "unclear": "warning"}
+
+
+def review_in_batches(todo: list[tuple[str, str, int]], provider, cache, nr: dict) -> int:
+    """Ask a long-context API model about many notes per request, up to its token budget, and cache
+    each note's answer under that note's own prompt, so the per-note pass finds it. todo holds
+    (slug, prompt, number of claims). Notes a batch misses are left for the per-note pass.
+    Returns how many notes were answered."""
+    from .providers.chain import estimate_tokens
+    budget = provider.budget()
+    if budget <= 0 or len(todo) < 2:
+        return 0
+    most_notes, out_cap = int(nr.get("batch_notes", 12)), int(nr.get("batch_max_tokens", 60000))
+    batches, cur, size = [], [], 0
+    for item in todo:
+        t = estimate_tokens(item[1]) + 40
+        if cur and (size + t > budget or len(cur) >= most_notes):
+            batches.append(cur)
+            cur, size = [], 0
+        cur.append(item)
+        size += t
+    batches.append(cur)
+    done = 0
+    for i, batch in enumerate(batches, 1):
+        if len(batch) == 1:
+            continue                                   # a single note goes through the per-note pass
+        print(f"review: batch {i}/{len(batches)}, {len(batch)} notes", file=sys.stderr, flush=True)
+        tasks = "\n\n".join(f"=== TASK {slug} ===\n{prompt}\n=== END {slug} ===" for slug, prompt, _ in batch)
+        try:
+            reply = provider.generate([], BATCH_PROMPT.format(n=len(batch), tasks=tasks), max_tokens=out_cap)
+            answers = parse_json(reply).get("notes") or {}
+        except (OSError, RuntimeError, ValueError) as e:
+            if type(e).__name__ == "NotEnoughMemory":
+                raise
+            print(f"review: batch {i} failed ({str(e)[:120]}); its notes go one at a time", file=sys.stderr)
+            if "no model in the chain" in str(e):
+                break
+            continue
+        for slug, prompt, n_claims in batch:
+            v = answers.get(slug)
+            if isinstance(v, dict) and isinstance(v.get("claims"), list) and len(v["claims"]) >= n_claims:
+                cache.put(cache.key(provider.answered_by or provider.model, prompt), json.dumps(v, ensure_ascii=False))
+                done += 1
+    return done
 
 
 def build(note, sources: dict, held: set[str], remote: bool, max_chars: int) -> tuple[str | None, list[str], list[Finding]]:
@@ -102,6 +153,15 @@ def run(root: Path, *, note_slugs: list[str] | None = None, overrides: dict | No
     sources = {sid: Source(md, sid) for sid, md in ctx.layout.all_sources(entries).items()}
     cache = Cache(ctx.work_dir / "notes_review_cache.json")
     findings, pending = [], 0
+    if hasattr(provider, "budget") and nr.get("batch", True):
+        todo = []
+        for note in load_notes(ctx.layout.notes):
+            if note_slugs and note.slug not in note_slugs:
+                continue
+            prompt, texts, _ = build(note, sources, held, remote, int(nr["max_passage_chars"]))
+            if prompt is not None and cache.lookup(provider, prompt) is None:
+                todo.append((note.slug, prompt, len(texts)))
+        review_in_batches(todo, provider, cache, nr)
     try:
         for note in load_notes(ctx.layout.notes):
             if note_slugs and note.slug not in note_slugs:

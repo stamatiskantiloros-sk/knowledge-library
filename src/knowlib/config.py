@@ -106,6 +106,32 @@ DEFAULTS: dict[str, Any] = {
         "max_passage_chars": 8000,           # each cited passage is cut to this length
         "retries": 1,                        # a reply cut off at the token limit is asked again with twice the tokens
     },
+    "providers": {
+        # API providers that a role's chain can use (backend: chain, chain: [<provider>/<model>, ...]).
+        # Limits are per model: rpm requests and tpm input tokens per minute, rpd requests per day,
+        # context the model's window. Free-tier numbers change; a 429 reply teaches the real daily
+        # limit, and `knowlib models` shows what is left today.
+        "google": {
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+            "api_key_env": "GOOGLE_API_KEY",
+            "api_key_file": "~/.google_key",
+            "reset_tz": "America/Los_Angeles",   # free-tier days end at midnight Pacific
+            "trains_on_data": True,              # the free tier may use what it is sent to improve Google's products
+            "timeout_s": 600,
+            "models": {
+                "gemini-3.8-flash": {"rpm": 5, "tpm": 250000, "rpd": 20, "context": 1000000},
+                "gemini-3.5-flash": {"rpm": 5, "tpm": 250000, "rpd": 20, "context": 1000000},
+                "gemini-3.5-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500, "context": 1000000},
+                "gemini-3.1-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500, "context": 1000000},
+                # Gemma thinks on its own (no reasoning_effort) and sees an image at ~260 tokens, a
+                # quarter of Gemini's detail: fine for text, weak for dense figures.
+                "gemma-4-31b-it": {"rpm": 30, "tpm": 15000, "rpd": 1500, "context": 128000,
+                                   "reasoning_effort": None},
+                "gemma-4-26b-a4b-it": {"rpm": 30, "tpm": 15000, "rpd": 1500, "context": 128000,
+                                       "reasoning_effort": None},
+            },
+        },
+    },
     "ocr_crosscheck": {
         "backends": ["apple-vision"],        # apple-vision | tesseract ; add tesseract as a third opinion
         "languages": ["el-GR", "en-US"],

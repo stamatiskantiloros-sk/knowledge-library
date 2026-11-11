@@ -107,6 +107,7 @@ Each library has five model roles: **reading** (slides, frames, figures, images)
 knowlib models -L ~/Documents/MyCourse                     # show; at a terminal, asks role by role
 knowlib models -L ~/Documents/MyCourse --use writer=session:sonnet --use review=session:opus
 knowlib models -L ~/Documents/MyCourse --use reading='server:https://gpu-box.example/v1|qwen3-vl|GPU_KEY'
+knowlib models -L ~/Documents/MyCourse --use review=chain:google/gemini-3.5-flash-lite,google/gemini-3.1-flash-lite
 knowlib models -L ~/Documents/MyCourse --check             # servers answer, vision without an image-token cap, context fits
 ```
 

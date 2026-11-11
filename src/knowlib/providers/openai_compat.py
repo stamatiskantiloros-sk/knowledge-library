@@ -19,6 +19,14 @@ from .base import VisionProvider, image_b64
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
 
+def _key_file(section: dict) -> str | None:
+    """The key from api_key_file (e.g. ~/.google_key) when its environment variable is not set."""
+    path = section.get("api_key_file")
+    if path and Path(path).expanduser().exists():
+        return Path(path).expanduser().read_text().strip() or None
+    return None
+
+
 class NotEnoughMemory(RuntimeError):
     """A model does not fit in the memory the system can hand out. Callers that fall back to another
     model on a RuntimeError let this one through, so the run stops and says why."""
@@ -59,7 +67,7 @@ class OpenAICompatProvider(VisionProvider):
         self.max_tokens = int(section.get("max_tokens", 1200))
         self.temperature = float(section.get("temperature", 0.0))
         self.max_px = section.get("openai_image_max_px")       # None = send native frames
-        self.api_key = os.environ.get(section.get("api_key_env") or "OPENAI_API_KEY", "none")
+        self.api_key = os.environ.get(section.get("api_key_env") or "OPENAI_API_KEY") or _key_file(section) or "none"
         self.is_local = (urlparse(self.base_url).hostname or "") in LOCAL_HOSTS
         self.timeout = float(section.get("timeout_s", 900))
         self.manage_lms = bool(section.get("manage_lms"))      # load and unload through LM Studio's lms CLI
