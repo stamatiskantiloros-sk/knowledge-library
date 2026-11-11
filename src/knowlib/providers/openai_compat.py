@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
@@ -58,7 +59,7 @@ class OpenAICompatProvider(VisionProvider):
         self.max_tokens = int(section.get("max_tokens", 1200))
         self.temperature = float(section.get("temperature", 0.0))
         self.max_px = section.get("openai_image_max_px")       # None = send native frames
-        self.api_key = os.environ.get(section.get("api_key_env", "OPENAI_API_KEY"), "none")
+        self.api_key = os.environ.get(section.get("api_key_env") or "OPENAI_API_KEY", "none")
         self.is_local = (urlparse(self.base_url).hostname or "") in LOCAL_HOSTS
         self.timeout = float(section.get("timeout_s", 900))
         self.manage_lms = bool(section.get("manage_lms"))      # load and unload through LM Studio's lms CLI
@@ -141,11 +142,30 @@ class OpenAICompatProvider(VisionProvider):
         return None if with_image is None or text_only is None else with_image - text_only
 
     def _post(self, body: dict) -> dict:
+        """One request with a hard deadline of timeout_s for the whole reply. urlopen's own timeout
+        only bounds each socket read, so a server that keeps the connection open without finishing
+        could hold the run for hours. A request past the deadline raises TimeoutError (an OSError,
+        which callers treat as a server failure); its thread is left to finish on its own."""
         req = urllib.request.Request(f"{self.base_url}/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json",
                                               "Authorization": f"Bearer {self.api_key}"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as r:
-            return json.loads(r.read())
+        result: dict = {}
+
+        def send() -> None:
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    result["reply"] = json.loads(r.read())
+            except BaseException as e:  # noqa: BLE001 - handed to the caller's thread below
+                result["error"] = e
+
+        worker = threading.Thread(target=send, daemon=True)
+        worker.start()
+        worker.join(self.timeout)
+        if worker.is_alive():
+            raise TimeoutError(f"{self.base_url} gave no complete reply within {self.timeout:.0f} s")
+        if "error" in result:
+            raise result["error"]
+        return result["reply"]
 
     def _ensure_loaded(self) -> None:
         if self.manage_lms and not self._loaded:

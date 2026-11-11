@@ -155,3 +155,55 @@ def test_the_models_command_sets_and_shows_roles(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "writer    session: sonnet" in out and "review    session: opus" in out
     assert main(["models", "-L", str(root), "--use", "nobody=session:opus"]) == 2
+
+
+def test_check_accepts_ids_listed_with_a_models_prefix_and_an_empty_key_setting(tmp_path, monkeypatch):
+    # Google's OpenAI-compatible endpoint lists "models/<id>" but takes the bare id in requests.
+    srv = Server([{"id": "models/vlm", "architecture": {"input_modalities": ["text", "image"]}}])
+    try:
+        root = library(tmp_path)
+        models.save(root, {"reading": models.parse_spec(f"server:{srv.url}|vlm")})
+        cfg = load_config(root)
+        cfg["frame_selection"]["api_key_env"] = ""          # empty means no key, not a crash
+        ok, msg = models.check(cfg, "reading")
+        assert ok, msg
+    finally:
+        srv.close()
+
+
+def test_a_request_that_never_finishes_stops_at_the_deadline():
+    """A server that keeps sending a byte now and then never trips urlopen's per-read timeout;
+    the provider's deadline still ends the request."""
+    import time
+    from knowlib.providers.openai_compat import OpenAICompatProvider
+
+    class Trickle(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "100000")
+            self.end_headers()
+            try:
+                for _ in range(50):
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                    time.sleep(0.2)
+            except OSError:
+                pass
+
+    httpd = HTTPServer(("127.0.0.1", 0), Trickle)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        p = OpenAICompatProvider({"base_url": f"http://127.0.0.1:{httpd.server_port}/v1",
+                                  "openai_model": "m", "timeout_s": 1, "api_key_env": ""})
+        start = time.monotonic()
+        with pytest.raises(TimeoutError, match="no complete reply within 1 s"):
+            p.generate([], "hi")
+        assert time.monotonic() - start < 3
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

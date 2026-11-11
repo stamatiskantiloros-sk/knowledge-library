@@ -187,6 +187,11 @@ def _test_image(path: Path) -> Path:
     return path
 
 
+def _bare(model_id) -> str:
+    """A model id without the "models/" prefix Google's endpoint lists its models under."""
+    return str(model_id or "").removeprefix("models/")
+
+
 def check(cfg: dict, role: str, *, full: bool = False) -> tuple[bool, str]:
     """(ok, message) for one role: the server answers and has the model; with full, also image detail
     for reading and the context window for the digest."""
@@ -206,7 +211,7 @@ def check(cfg: dict, role: str, *, full: bool = False) -> tuple[bool, str]:
         if sec.get("openai_model") not in keys:
             return False, f"{sec.get('openai_model')} is not downloaded in LM Studio"
         return True, "in LM Studio (loaded when needed)"
-    env = sec.get("api_key_env", "OPENAI_API_KEY")
+    env = sec.get("api_key_env") or "OPENAI_API_KEY"
     key = os.environ.get(env, "none")
     base = sec.get("base_url", "").rstrip("/")
     try:
@@ -214,7 +219,7 @@ def check(cfg: dict, role: str, *, full: bool = False) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001 - any failure to reach the server is the answer
         hint = f" (is {env} set?)" if key == "none" and "401" in str(e) else ""
         return False, f"{base} does not answer: {e}{hint}"
-    model = next((m for m in listed if m.get("id") == sec.get("openai_model")), None)
+    model = next((m for m in listed if _bare(m.get("id")) == _bare(sec.get("openai_model"))), None)
     if model is None:
         return False, f"{base} does not serve {sec.get('openai_model')} (it has: " \
                       f"{', '.join(m.get('id', '?') for m in listed) or 'nothing'})"
