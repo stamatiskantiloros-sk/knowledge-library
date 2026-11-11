@@ -78,6 +78,8 @@ BRIEF_RULES = """You are writing the study book of one recorded lecture, for a s
 13. Let the arrangement show where things come from. Never write "on the slide", "the slide says", "(slide)" or "Slide:": what the slides show is the default, and the [[slide N]] lines and section endings already point to them. Mark only the lecturer's own additions, where it matters, by structure or a short lead ("the lecturer added", "with the lecturer's examples in brackets").
 14. Plain words a student understands without decoding: no shorthand labels or symbols in place of words ("Pick:", "=", "vs" as a verb); say "the lecturer's top priority", "means", "compared with".
 15. State things exactly as strongly as the source does: keep its hedges and its wording of degree ("that's a problem", not "it fails"; "can", "often", "may"). Do not upgrade an example into a rule or a reason into a definition.
+16. Leave out what is incomplete: a name, reference or point the recording lost or garbled is dropped, not reported with a note about the gap ("its name was lost in the recording").
+17. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point, without saying a student raised it.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>"""
 
