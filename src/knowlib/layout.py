@@ -95,7 +95,9 @@ class Layout:
         """Delete a source's generated files (when its id changes)."""
         if self.inplace:
             md = self.source_md(source_id, entry)
-            if md.exists() and self.is_generated(md):
+            # in place, the new id can write the same path (a lecture folder's .lecture.md): delete only
+            # a file that still belongs to the old id
+            if md.exists() and self.is_generated(md) and f"id: {source_id}\n" in md.read_text(encoding="utf-8")[:400]:
                 md.unlink()
             shutil.rmtree(self.assets_dir(source_id), ignore_errors=True)
         else:

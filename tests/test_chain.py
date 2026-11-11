@@ -192,3 +192,11 @@ def test_a_batch_reply_with_broken_json_keeps_every_complete_verdict():
     got = salvage(reply, ["a", "b"])
     assert [c["verdict"] for c in got["a"]["claims"]] == ["supported", "partly"]
     assert got["b"]["claims"][0]["reason"] == 'says "no"'
+
+
+def test_the_image_detail_check_is_skipped_for_a_model_with_a_fixed_image_budget(fake, tmp_path):
+    cfg = cfg_for(fake.url)
+    cfg["providers"]["g"]["models"]["lite"] = {"fixed_image_tokens": True}
+    chain = ChainProvider({"backend": "chain", "chain": ["g/lite"]}, cfg)
+    assert chain.image_tokens(tmp_path / "any.png") is None and fake.calls == []
+    assert "fixed_image_tokens" not in chain.members[0]["section"]

@@ -126,5 +126,6 @@ Split long lectures into batches of about 30 jobs per subagent. Decisions and an
 
 ## Rules
 {{RULES}}
+- **Privacy comes first.** Never send personal information (names, emails, phone numbers, employers or other details of students, staff, guests or anyone else) to a model or service off this machine, and never put it in a handbook, a note or anything shared. It hides in transcripts of recordings (people called by name), class or group lists, title and contact slides, photo captions and figures. Before anything goes to an API, redact it (`privacy.names` in the config lists the names to replace; emails and phone numbers are found automatically); figures showing it stay on this machine. In written output call people "the lecturer", "a student", "a colleague". `knowlib handbook --finish` checks the text and every image and lists what it finds under "To check": a handbook with any is not ready. When in doubt, leave it out and ask.
 - Sources ingested with `local_only` are confidential: do not send their content to web tools or external services.
 - Adding a source type or changing a model is a config or code change in knowlib, not a manual workaround.

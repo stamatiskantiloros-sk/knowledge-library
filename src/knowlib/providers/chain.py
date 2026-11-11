@@ -46,10 +46,11 @@ def member_sections(section: dict, cfg: dict) -> list[dict]:
         p = providers[name]
         mconf = dict((p.get("models") or {}).get(model) or {})
         limits = {k: mconf.pop(k) for k in LIMIT_KEYS if k in mconf}
+        fixed = bool(mconf.pop("fixed_image_tokens", False))
         sec = {**role, **{k: v for k, v in p.items() if k not in ("models", "reset_tz", "trains_on_data")},
                **mconf, "backend": "openai", "openai_model": model, "manage_lms": False}
         out.append({"key": f"{name}/{model}", "section": sec, "limits": limits, "tz": p.get("reset_tz"),
-                    "trains": bool(p.get("trains_on_data"))})
+                    "trains": bool(p.get("trains_on_data")), "fixed_image_tokens": fixed})
     return out
 
 
@@ -126,9 +127,11 @@ class ChainProvider(VisionProvider):
         raise RuntimeError("no model in the chain could answer: " + "; ".join(failures))
 
     def image_tokens(self, image: Path) -> int | None:
+        """The first available model's tokens for an image; None (no check) for a model that gives
+        every image the same budget by design, as Gemini does: its detail is not capped by a server."""
         for m in self.members:
             if quota.available(m["key"], m["limits"], m["tz"]):
-                return m["provider"].image_tokens(image)
+                return None if m.get("fixed_image_tokens") else m["provider"].image_tokens(image)
         return None
 
     def usage(self) -> list[str]:

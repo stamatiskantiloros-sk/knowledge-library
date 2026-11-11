@@ -32,6 +32,9 @@ DEFAULTS: dict[str, Any] = {
         "mixed_language_as": "el",           # Whisper needs one language; English terms go in the glossary prompt
         "word_timestamps": True,
         "glossary_prompt_chars": 800,        # Whisper's initial prompt is ~224 tokens max
+        "glossary_every_window": True,       # mlx-whisper: keep the glossary prompt on every 30 s window
+        "hallucination_silence_s": 2.0,      # mlx-whisper: skip silences this long, where loops start
+        "start_s": None,                     # per session: transcribe from here (skip the room before class)
         "prefer_subtitles": False,           # use a provided .srt/.vtt instead of transcribing
     },
     "alignment": {
@@ -122,11 +125,13 @@ DEFAULTS: dict[str, Any] = {
             "reset_tz": "America/Los_Angeles",   # free-tier days end at midnight Pacific
             "trains_on_data": True,              # the free tier may use what it is sent to improve Google's products
             "timeout_s": 600,
+            # Gemini gives every image about 1,100 tokens whatever its size (fixed_image_tokens), so the
+            # image-detail check, meant for servers that cap tokens, is skipped for it.
             "models": {
-                "gemini-3.8-flash": {"rpm": 5, "tpm": 250000, "rpd": 20, "context": 1000000},
-                "gemini-3.5-flash": {"rpm": 5, "tpm": 250000, "rpd": 20, "context": 1000000},
-                "gemini-3.5-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500, "context": 1000000},
-                "gemini-3.1-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500, "context": 1000000},
+                "gemini-3.8-flash": {"rpm": 5, "tpm": 250000, "rpd": 20, "context": 1000000, "fixed_image_tokens": True},
+                "gemini-3.5-flash": {"rpm": 5, "tpm": 250000, "rpd": 20, "context": 1000000, "fixed_image_tokens": True},
+                "gemini-3.5-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500, "context": 1000000, "fixed_image_tokens": True},
+                "gemini-3.1-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500, "context": 1000000, "fixed_image_tokens": True},
                 # Gemma thinks on its own (no reasoning_effort) and sees an image at ~260 tokens, a
                 # quarter of Gemini's detail: fine for text, weak for dense figures.
                 "gemma-4-31b-it": {"rpm": 30, "tpm": 15000, "rpd": 1500, "context": 128000,

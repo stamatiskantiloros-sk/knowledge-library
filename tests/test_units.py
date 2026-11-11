@@ -481,7 +481,8 @@ def test_handbook_finish_checks_an_agents_draft(tmp_path):
     from knowlib.handbook.maker import finish
     src = tmp_path / "src"
     (src / "assets").mkdir(parents=True)
-    (src / "assets" / "f.jpg").write_bytes(b"x")
+    from PIL import Image
+    Image.new("RGB", (40, 30), "white").save(src / "assets" / "f.jpg")   # a real image: finish reads it for privacy
     (src / "source.md").write_text("---\ntitle: T\n---\n## Slide 1 (00:00–00:10)\n"
                                    "![Slide 1](assets/f.jpg) · [full resolution](assets/f.jpg)\n\n"
                                    "**On slide:**\n\n| a | b |\n|---|---|\n| 1.5 | 2.5 |\n\n**Spoken:**\n\n[00:01] Hello\n",
@@ -517,3 +518,57 @@ def test_session_reader_waits_for_written_answers(tmp_path):
     stop_if_waiting(tmp_path)
     with pytest.raises(AgentPending):             # the same frame name in another lecture is another job
         provider.generate([tmp_path / "other" / "f.jpg"], "Read this")
+
+
+def test_the_glossary_prompt_is_kept_on_every_whisper_window():
+    """Whisper drops initial_prompt after the first window when it does not condition on its own
+    text; knowlib puts it back in front of each window's prompt, once."""
+    from mlx_whisper import whisper as W
+    from mlx_whisper.decoding import DecodingOptions
+    from knowlib.media.transcribe import _GlossaryEveryWindow
+    seen = []
+    real = W.Whisper.decode
+    W.Whisper.decode = lambda model, mel, options, *a, **k: seen.append(options.prompt)
+    try:
+        model = type("M", (), {"is_multilingual": True, "num_languages": 100})()
+        with _GlossaryEveryWindow("Glossary: Little's law, takt time.", "en") as g:
+            W.Whisper.decode(model, None, DecodingOptions(prompt=[]))           # a later window: reset
+            W.Whisper.decode(model, None, DecodingOptions(prompt=g.tokens + [1, 2]))   # the first window
+        W.Whisper.decode(model, None, DecodingOptions(prompt=[]))               # restored afterwards
+    finally:
+        W.Whisper.decode = real
+    assert seen[0] == g.tokens and seen[1] == g.tokens + [1, 2] and seen[2] == []
+
+
+def test_personal_information_is_found_and_redacted():
+    from knowlib import privacy
+    ns = ["Maria", "Papadopoulos"]
+    assert privacy.reasons("Throughput = 42 units per hour", ns) == []
+    assert privacy.reasons("1 | Doe | Jane | jane.doe@uni.gr", ns) == ["an email address"]
+    assert privacy.reasons("Ast. Prof. A. Papadopoulos", ns) == ["a name"]
+    assert privacy.reasons("call +30 210 1234567", []) == ["a phone number"]
+    assert privacy.reasons("pages 120-135, 2026", []) == []           # numbers alone are not a phone
+    assert privacy.redact("What happens in your jobs, Maria? Mail m@example.org", ns) == \
+        "What happens in your jobs, [a person]? Mail [an email address]"
+
+
+def test_the_brief_marks_undiscussed_slides_redacts_names_and_lists_the_notes(tmp_path):
+    from knowlib.handbook.maker import Lecture, Slide, brief
+    lec = Lecture("lec", "L/", "Lecture 1", tmp_path, [
+        Slide(1, "0:00", "1:00", text="Title", spoken="What happens in your jobs, Maria? Write to a@example.org"),
+        Slide(2, "1:00", "1:00", text="Team exercise", discussed=False)])
+    (tmp_path / "notes").mkdir()
+    out = brief(lec, [], notes_dir=tmp_path / "notes", names=["Maria"])
+    assert "Maria" not in out and "a@example.org" not in out and "[a person]" in out
+    assert out.split("### Slide 2", 1)[1].count("Not discussed in the recording") == 1
+    assert "Topic notes built from these materials" in out and "10. Name no one." in out
+
+
+def test_finish_reports_personal_information_in_the_text_and_images(tmp_path, monkeypatch):
+    from knowlib.handbook import maker
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "s1.png").write_bytes(b"png")
+    (tmp_path / "handbook.md").write_text("# H\n\nAsk Maria.\n\n![Slide 1](assets/s1.png)\n")
+    monkeypatch.setattr("knowlib.media.ocr.apple_vision", lambda path, oc: "Prof. A. B., ab@example.org")
+    got = maker.personal_information(tmp_path, {"privacy": {"names": ["Maria"]}})
+    assert any("in the text (a name)" in g for g in got) and any("s1.png shows personal information" in g for g in got)

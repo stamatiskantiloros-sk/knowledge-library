@@ -215,6 +215,24 @@ def _read(todo: list[str], crops: dict, cfg: dict, work: Path, stats: dict) -> t
                     key_for(t, models[0])) for t in todo}
     to_ask = [crops[t][0] for t in todo if keys[t] not in cache or cache[keys[t]].endswith(CUT_OFF)]
     readings, flags = {}, []
+    private = {}                                 # crops that stay on this machine: personal information
+    if not getattr(provider, "is_local", True):
+        from .. import privacy
+        from ..media.ocr import apple_vision
+        ns = privacy.names(cfg)
+        for t in todo:
+            crop = crops[t][0]
+            if crop not in to_ask:
+                continue
+            try:
+                seen = apple_vision(crop, cfg["ocr_crosscheck"])
+            except Exception as e:  # noqa: BLE001 - without a local reading, do not send it
+                seen, why = "", [f"no local OCR to check it ({e})"]
+            else:
+                why = privacy.reasons(seen, ns)
+            if why:
+                private[t] = why
+        to_ask = [c for c in to_ask if c not in {crops[t][0] for t in private}]
     try:
         detail = _detail_check(provider, to_ask, work, (cfg["pdf"].get("figures") or {}).get("detail_check", "stop"))
         flags += [detail] if detail else []
@@ -222,6 +240,13 @@ def _read(todo: list[str], crops: dict, cfg: dict, work: Path, stats: dict) -> t
             progress.stage("reading figures", n, len(todo))
             crop = crops[text][0]
             key = keys[text]
+            if text in private:
+                page = text.split()[2].split("-")[0]
+                flags.append(f"figure on pdf page {page} kept on this machine: it shows {', '.join(private[text])}; "
+                             "read the figure yourself")
+                crops[text] = (crop, "not read")
+                stats["skipped"]["kept local (personal)"] += 1
+                continue
             if key not in cache or cache[key].endswith(CUT_OFF):
                 page = text.split()[2].split("-")[0]
                 try:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -45,6 +46,28 @@ def _paragraphs(segs: list[dict], start: float, end: float, para_s: float = 60) 
     if cur:
         out.append(f"[{fmt_ts(cur_t)}] " + " ".join(cur))
     return out
+
+
+def _seconds(t) -> float:
+    """'1:02:41', '62:41' or a number of seconds."""
+    if isinstance(t, (int, float)):
+        return float(t)
+    p = [float(x) for x in str(t).split(":")]
+    return p[0] * 3600 + p[1] * 60 + p[2] if len(p) == 3 else p[0] * 60 + p[1] if len(p) == 2 else p[0]
+
+
+def _reuse_earlier(path: Path, fingerprint: dict) -> None:
+    """A transcript cached under the session's earlier id (a session.yaml edit changes the id): copy it
+    over when its fingerprint matches, so the recording is not transcribed again."""
+    if path.exists():
+        return
+    for other in path.parent.parent.glob(f"*/{path.name}"):
+        try:
+            if json.loads(other.read_text()).get("fingerprint") == fingerprint:
+                shutil.copy2(other, path)
+                return
+        except (OSError, ValueError):
+            continue
 
 
 def _cached(path: Path, fingerprint: dict, compute):
@@ -131,6 +154,7 @@ class MediaSessionIngestor(Ingestor):
                                          glossary=sess.glossary, subtitles=sess.subtitles)
                 return {"segments": s, "provenance": prov, "flags": fl}
             progress.stage("speech to text")
+            _reuse_earlier(work / "transcript.json", fp)
             tr = _cached(work / "transcript.json", fp, run_transcription)
             segs = map_segments(tr["segments"], mapping.map)
             pipeline["transcription"] = tr["provenance"]
@@ -199,6 +223,10 @@ class MediaSessionIngestor(Ingestor):
             e = ctx.manifest.entries.get(key)
             if e and e.get("source_id"):
                 related.append(e["source_id"])
+                if ctx.layout is not None:                 # audio without video: align speech to the deck
+                    self._deck = (sess.folder / item.sidecar["slides"], ctx.layout.source_md(e["source_id"], e),
+                                  {int(n) for n in item.sidecar.get("skip_slides") or []})
+                    self._starts = item.sidecar.get("slide_starts") or {}
             else:
                 flags.append(f"slides file {item.sidecar['slides']} named in session.yaml was not ingested")
 
@@ -234,7 +262,89 @@ class MediaSessionIngestor(Ingestor):
                 return sess.info[p.name]["creation_time"][:10]
         return None
 
+    _deck = None
+    _starts = None
+
+    def _render_aligned(self, sess, segs, w: SourceWriter, flags, stats, pipeline: dict | None = None) -> str:
+        """An audio-only lecture with its slide deck: each slide with what was said while it was up,
+        matched by the slides' text (media/slidealign.py)."""
+        import pymupdf
+        from ..media.slidealign import align
+        pdf, deck_md, skip = self._deck
+        raw = deck_md.read_text(encoding="utf-8")
+        parts = re.split(r"<!-- page (\d+) \(pdf \d+\) -->", raw)[1:]
+        pages = {int(parts[i]): parts[i + 1] for i in range(0, len(parts), 2)}
+        slides = [(n, t) for n, t in sorted(pages.items()) if n not in skip]
+        places = align(segs, slides)
+        manual = self._starts or {}
+        if manual:                                         # session.yaml slide_starts: checked by hand
+            by_n = {p.slide: p for p in places}
+            for n, t in manual.items():
+                if int(n) in by_n:
+                    by_n[int(n)].start = None if t in (None, "", "none") else _seconds(t)
+                    by_n[int(n)].score = 9.9 if t not in (None, "", "none") else 0.0
+            shown = sorted((p for p in places if p.start is not None), key=lambda p: p.start)
+            for a, b in zip(shown, shown[1:]):
+                a.end = b.start
+            if shown:
+                shown[-1].end = max([s["end"] for s in segs], default=shown[-1].start)
+        doc = pymupdf.open(pdf)
+        lines = [f"# {sess.title}", "",
+                 f"*Duration {fmt_ts(stats.get('duration_s') or 0)} · speech matched to the {len(slides)} slides of "
+                 f"{pdf.name} by their text" + (f"; slides {', '.join(map(str, sorted(skip)))} left out" if skip else "")
+                 + "*"]
+        shown = [p for p in places if p.start is not None]
+        if shown and shown[0].start > 0:
+            pre = _paragraphs(segs, float("-inf"), shown[0].start)
+            if pre:
+                lines += ["", f"## Before the first slide (to {fmt_ts(shown[0].start)})", "", *[p + "\n" for p in pre]]
+        last_end = shown[0].start if shown else 0.0
+        end_all = max([s["end"] for s in segs], default=0) + 1
+        weak = []
+        for p in places:
+            text = pages[p.slide]
+            figures = re.findall(r"> \*\*Figure, read by the vision model:\*\*\n((?:>.*\n?)*)", text)
+            body = re.sub(r"> \*\*Figure, read by the vision model:\*\*\n(?:>.*\n?)*", "", text)
+            body = re.sub(r"!\[[^\]]*\]\([^)]*\)|<!--.*?-->", "", body).strip()
+            reading = "\n".join(re.sub(r"^> ?", "", ln) for f in figures for ln in f.splitlines()).strip()
+            img = w.asset_path(f"slide_{p.slide:03d}.png")
+            if p.slide - 1 < doc.page_count:
+                doc[p.slide - 1].get_pixmap(dpi=110).save(str(img))
+            start = p.start if p.start is not None else last_end
+            end = p.end if p.end is not None else start
+            if p.end is None and p.start is not None:
+                end = end_all
+            lines += ["", f"## Slide {p.slide} ({fmt_ts(start)}–{fmt_ts(end)})", f"![Slide {p.slide}](assets/{img.name})"]
+            if p.start is None:
+                lines += ["", "*Not discussed in the recording.*"]
+            elif p.score < 1.0:
+                weak.append(p.slide)
+            if body:
+                lines += ["", "**On slide:**", "", body]
+            if reading:
+                lines += ["", f"**Figure:** {reading}"]
+            if p.start is not None:
+                spoken = _paragraphs(segs, start, end)
+                if spoken:
+                    lines += ["", "**Spoken:**", "", *[s + "\n" for s in spoken]]
+                last_end = end
+        missed = [p.slide for p in places if p.start is None]
+        stats["slides"] = len(slides)
+        stats["slides_discussed"] = len(slides) - len(missed)
+        if missed:
+            flags.append(f"slides not matched to any speech: {', '.join(map(str, missed))} (not discussed, "
+                         "or discussed with few of their words: check)")
+        if weak:
+            flags.append(f"slides matched weakly, check where they start and end: {', '.join(map(str, weak))}")
+        return "\n".join(lines)
+
     def _render(self, sess, segs, kept, w: SourceWriter, cfg, flags, stats) -> str:
+        if not kept and self._deck and segs:
+            try:
+                return self._render_aligned(sess, segs, w, flags, stats)
+            finally:
+                self._deck = None
+        self._deck = None
         vc = cfg["video"]
         lines = [f"# {sess.title}", ""]
         dur = stats.get("duration_s")

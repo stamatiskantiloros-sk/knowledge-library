@@ -24,6 +24,7 @@ from .. import progress
 from ..contract import slugify
 from ..manifest import Manifest
 from ..media.ocr import numbers
+from .. import privacy
 from ..providers import get_vision_provider, parse_json, release_all
 from ..runner import open_library, process
 
@@ -71,6 +72,8 @@ BRIEF_RULES = """You are writing the study book of one recorded lecture, for a s
 7. Add a note only where the student cannot follow without it: a line starting "> **Note (not from class):**", one or two sentences, naming its source; for a book, also its page, from the `<!-- page N (pdf M) -->` line above the passage (N is the printed page). The passages below are the closest matches only: search all the course materials, listed at the end, for what the lecture leaves unclear, for conflicts with it, and to verify a note.
 8. Write [[slide N]] on its own line where the reader needs an image: charts, tables, diagrams, screens. Use LaTeX for formulas and Markdown tables, with the same number of cells in every row.
 9. End each section with its slides and times in italics. Call the speaker "the lecturer", without he or she.
+10. Name no one. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone in the room, even where the transcript or a slide shows one ([a person] marks a name taken out).
+11. A slide marked "Not discussed in the recording" was not taught in what was recorded: leave it out. Where a section cannot make sense without it, say in one line that the slide was shown but not discussed.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>"""
 
@@ -115,6 +118,7 @@ class Slide:
     flagged: bool = False
     from_ocr: bool = False
     ocr: str = ""
+    discussed: bool = True
 
     def usable(self) -> bool:
         """A slide with no reading and nothing said is an opening image or a failed reading."""
@@ -175,6 +179,7 @@ def parse_source(path: Path, source_id: str = "", key: str = "") -> Lecture:
             spoken=_between(b, "**Spoken:**", ("\n## ",)),
             frame=frame.group(1) if frame else "",
             flagged="**OCR check:**" in b, from_ocr="**On slide (OCR):**" in b,
+            discussed="*Not discussed in the recording.*" not in b,
             ocr=" ".join(re.findall(r"\*\*OCR text[^\n]*\n(.*?)(?=\n\*\*|\Z)", b, re.S))))
     if before and lecture.slides:
         lecture.slides[0].spoken = f"{before} {lecture.slides[0].spoken}".strip()
@@ -492,22 +497,26 @@ def make(root: Path, output: Path, *, input_dir: Path | None = None, only: list[
 
 def prepare(root: Path, output: Path, *, input_dir: Path | None = None, only: list[str] | None = None) -> list[str]:
     """Write a brief per lecture for an agent to write the book from, instead of a local model."""
-    _, lectures, materials = _select(root, input_dir, only)
+    ctx, lectures, materials = _select(root, input_dir, only)
     briefs = []
     for key, e, md in lectures:
         lecture = parse_source(md, e["source_id"], key)
         out = Path(output) / slugify(lecture.title)
         out.mkdir(parents=True, exist_ok=True)
         (out / ".lecture.json").write_text(json.dumps({"folder": str(md), "source_id": e["source_id"], "key": key}))
-        (out / "brief.md").write_text(brief(lecture, materials), encoding="utf-8")
+        (out / "brief.md").write_text(brief(lecture, materials, notes_dir=ctx.layout.notes,
+                                            names=privacy.names(ctx.config)), encoding="utf-8")
         briefs.append(str(out / "brief.md"))
     return briefs
 
 
-def brief(lecture: Lecture, materials: list[tuple[str, str]]) -> str:
+def brief(lecture: Lecture, materials: list[tuple[str, str]], *, notes_dir: Path | None = None,
+          names: list[str] | None = None) -> str:
     lines = [f"# Brief: {lecture.title}", "", BRIEF_RULES, "", "## Slides", ""]
     for s in lecture.slides:
         lines += [f"### Slide {s.n} ({s.start}–{s.end})", "", f"Image: {lecture.folder / s.frame}"]
+        if not s.discussed:
+            lines.append("Not discussed in the recording")
         if s.flagged:
             lines.append("OCR check: FLAGGED, read the image")
         if s.from_ocr:
@@ -515,7 +524,8 @@ def brief(lecture: Lecture, materials: list[tuple[str, str]]) -> str:
         lines += ["", s.material(), ""]
         if s.ocr:
             lines += [f"Classic OCR: {s.ocr}", ""]
-    passages = relevant_passages("\n".join(s.material() for s in lecture.slides), [m[:2] for m in materials], top=6)
+    others = [m for m in materials if Path(m[3]).parent != Path(lecture.folder)]   # its own deck is above already
+    passages = relevant_passages("\n".join(s.material() for s in lecture.slides), [m[:2] for m in others], top=6)
     lines += ["## Course-material passages", ""]
     lines += [f"From {t}:\n{c}\n" for t, c in passages] or ["None."]
     lines += ["## All course materials", "", "Search these with `rg -i \"<term>\" <path>`.", ""]
@@ -524,11 +534,17 @@ def brief(lecture: Lecture, materials: list[tuple[str, str]]) -> str:
                                                if digest.exists() else ""))
     if not materials:
         lines.append("None.")
-    return "\n".join(lines) + "\n"
+    if notes_dir and Path(notes_dir).is_dir():
+        lines += ["", f"Topic notes built from these materials, every claim with its page: {notes_dir} "
+                  f"(map: {Path(notes_dir).parent / 'INDEX.md'}). Use them to find the pages; read the page "
+                  "and cite the book, never a note."]
+    text = "\n".join(lines) + "\n"
+    return privacy.redact(text, names) if names is not None else text
 
 
 def finish(output: Path) -> list[dict]:
     """Check each draft.md under output, then write handbook.md, review.md and the PDF."""
+    output = Path(output).expanduser().resolve()           # the PDF export needs absolute file URLs
     results = []
     for meta in sorted(Path(output).glob("*/.lecture.json")):
         out = meta.parent
@@ -549,6 +565,7 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     issues += [f"slide {s.n}: table numbers not in the text: {', '.join(lost)}" for s in lecture.slides
                if f"[[slide {s.n}]]" not in draft and (lost := missing_table_numbers(shown, s))]
     (out / "handbook.md").write_text(_place_figures(draft, lecture.slides, lecture, out, issues), encoding="utf-8")
+    issues += personal_information(out, _library_config(folder))
     flagged = [s for s in lecture.slides if s.flagged]
     corrections = out / "corrections.md"
     review = [f"# Review: {lecture.title}", "", f"Source: {lecture.source_id}", "", "## To check", ""]
@@ -560,6 +577,39 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     (out / "review.md").write_text("\n".join(review) + "\n", encoding="utf-8")
     return {"lecture": lecture.title, "issues": len(issues), "flagged": len(flagged),
             "output": str(out), "pdf": _export(out)}
+
+
+def _library_config(md: Path) -> dict:
+    """The config of the library the lecture belongs to (found by walking up to its _knowlib)."""
+    from ..config import DEFAULTS, load_config
+    for d in [md.parent, *md.parents]:
+        if (d / "_knowlib" / "config.yaml").exists() or (d / "config.yaml").exists() and (d / "_knowlib").exists():
+            return load_config(d)
+    return DEFAULTS
+
+
+def personal_information(out: Path, cfg: dict) -> list[str]:
+    """Personal information in the finished handbook: emails, phone numbers and privacy.names, in its
+    text and, read by classic OCR on this machine, in every image it shows. A handbook with any is not
+    ready to share."""
+    names = privacy.names(cfg)
+    issues = []
+    text = (out / "handbook.md").read_text(encoding="utf-8")
+    if why := privacy.reasons(text, names):
+        issues.append(f"personal information in the text ({', '.join(why)}): remove it")
+    from ..media.ocr import apple_vision
+    for img in sorted(set(re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text))):
+        path = out / img
+        if not path.exists():
+            continue
+        try:
+            seen = apple_vision(path, cfg.get("ocr_crosscheck") or {})
+        except Exception as e:  # noqa: BLE001 - an image that cannot be read is checked by hand
+            issues.append(f"{img}: could not be read to check for personal information ({e}): look at it")
+            continue
+        if why := privacy.reasons(seen, names):
+            issues.append(f"{img} shows personal information ({', '.join(why)}): leave the image out or crop it")
+    return issues
 
 
 def lecture_order(key: str) -> tuple:

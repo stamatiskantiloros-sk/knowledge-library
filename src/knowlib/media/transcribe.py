@@ -37,19 +37,64 @@ def whisper_language(lang: str | None, tc: dict) -> str | None:
 
 # ---- backends -----------------------------------------------------------------------------
 
+class _GlossaryEveryWindow:
+    """Keep the glossary prompt on every 30-second window. Whisper uses initial_prompt only until it
+    resets the context, and with condition_on_previous_text false (which stops hallucination loops
+    running on) it resets after the first window: the glossary would help the first 30 seconds of a
+    lecture only. This prepends it to each window's prompt while it is active."""
+
+    def __init__(self, prompt: str | None, lang: str | None):
+        self.prompt, self.lang, self.tokens, self.orig = prompt, lang, None, None
+
+    def __enter__(self):
+        if not self.prompt:
+            return self
+        from dataclasses import replace
+        from mlx_whisper import whisper as W
+        from mlx_whisper.tokenizer import get_tokenizer
+        self.orig = W.Whisper.decode
+        outer = self
+
+        def decode(model, mel, options, *args, **kw):
+            if outer.tokens is None:
+                tok = get_tokenizer(model.is_multilingual, num_languages=model.num_languages,
+                                    language=outer.lang, task="transcribe")
+                outer.tokens = tok.encode(" " + outer.prompt.strip())
+            p = options.prompt
+            if p is None or (isinstance(p, list) and p[:len(outer.tokens)] != outer.tokens):
+                options = replace(options, prompt=outer.tokens + list(p or []))
+            return outer.orig(model, mel, options, *args, **kw)
+
+        W.Whisper.decode = decode
+        return self
+
+    def __exit__(self, *exc):
+        if self.orig is not None:
+            from mlx_whisper import whisper as W
+            W.Whisper.decode = self.orig
+
+
 def _mlx_whisper(wav: Path, lang, prompt, tc: dict) -> list[dict]:
     import mlx_whisper
-    r = mlx_whisper.transcribe(str(wav), path_or_hf_repo=tc["model"], language=lang,
-                               initial_prompt=prompt, word_timestamps=tc.get("word_timestamps", True),
-                               condition_on_previous_text=tc.get("condition_on_previous_text", False),
-                               verbose=None)
+    extra = {}
+    if tc.get("start_s"):                              # skip what comes before the lecture
+        extra["clip_timestamps"] = str(float(tc["start_s"]))
+    if tc.get("hallucination_silence_s") and tc.get("word_timestamps", True):
+        extra["hallucination_silence_threshold"] = float(tc["hallucination_silence_s"])
+    carry = prompt if tc.get("glossary_every_window", True) else None
+    with _GlossaryEveryWindow(carry, lang):
+        r = mlx_whisper.transcribe(str(wav), path_or_hf_repo=tc["model"], language=lang,
+                                   initial_prompt=prompt, word_timestamps=tc.get("word_timestamps", True),
+                                   condition_on_previous_text=tc.get("condition_on_previous_text", False),
+                                   verbose=None, **extra)
     return [_seg(s) for s in r["segments"]]
 
 
 def _faster_whisper(wav: Path, lang, prompt, tc: dict) -> list[dict]:
     from faster_whisper import WhisperModel
     model = WhisperModel(tc.get("faster_whisper_model", "large-v3-turbo"), device="auto", compute_type="auto")
-    segs, _ = model.transcribe(str(wav), language=lang, initial_prompt=prompt, vad_filter=True,
+    extra = {"clip_timestamps": str(float(tc["start_s"]))} if tc.get("start_s") else {}
+    segs, _ = model.transcribe(str(wav), language=lang, initial_prompt=prompt, vad_filter=True, **extra,
                                word_timestamps=tc.get("word_timestamps", True),
                                condition_on_previous_text=tc.get("condition_on_previous_text", False))
     out = []
@@ -161,7 +206,8 @@ def transcribe(audio: Path, work: Path, cfg: dict, *, language: str | None, glos
     prov = stage(backend, model=tc.get("model") if backend == "mlx-whisper" else
                  tc.get("whisper_cpp_model") if backend == "whisper-cpp" else
                  tc.get("faster_whisper_model") if backend == "faster-whisper" else backend,
-                 package=PACKAGES.get(backend), language=lang, glossary_terms=len(glossary) or None)
+                 package=PACKAGES.get(backend), language=lang, glossary_terms=len(glossary) or None,
+                 start_s=tc.get("start_s") or None)
     return segs, prov, flags
 
 

@@ -180,3 +180,21 @@ def test_output_with_a_long_frontmatter_is_never_ingested(folder):
     assert not lay.is_generated(folder / "Lecturer" / "notes.md")
     rep = process(folder, force=True, only=["textbook.pdf"])
     assert "old.pdf.md" not in json.dumps(rep["new"] + rep["updated"]), rep
+
+
+def test_removing_an_old_id_keeps_a_file_the_new_id_wrote_at_the_same_path(tmp_path):
+    """A lecture folder's .lecture.md keeps its path when its id changes (a session.yaml edit):
+    removing the old id must not delete the new source's file."""
+    from knowlib.layout import Layout
+    from knowlib.config import load_config
+    (tmp_path / "_knowlib").mkdir()
+    (tmp_path / "_knowlib" / "config.yaml").write_text("library: {mode: inplace}\n")
+    lay = Layout(tmp_path, load_config(tmp_path))
+    md = tmp_path / "Lecture1" / "Lecture1.lecture.md"
+    md.parent.mkdir()
+    md.write_text("---\nid: lecture-new\ngenerated_by: knowlib\n---\n# Lecture\n")
+    lay.remove("lecture-old", {"output": "Lecture1/Lecture1.lecture.md"})
+    assert md.exists()
+    md.write_text("---\nid: lecture-old\ngenerated_by: knowlib\n---\n# Lecture\n")
+    lay.remove("lecture-old", {"output": "Lecture1/Lecture1.lecture.md"})
+    assert not md.exists()
