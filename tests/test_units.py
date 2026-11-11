@@ -572,3 +572,11 @@ def test_finish_reports_personal_information_in_the_text_and_images(tmp_path, mo
     monkeypatch.setattr("knowlib.media.ocr.apple_vision", lambda path, oc: "Prof. A. B., ab@example.org")
     got = maker.personal_information(tmp_path, {"privacy": {"names": ["Maria"]}})
     assert any("in the text (a name)" in g for g in got) and any("s1.png shows personal information" in g for g in got)
+
+
+def test_captions_and_section_endings_can_leave_out_recording_times():
+    from knowlib.handbook.maker import without_times
+    text = ("![Slide 2, 08:16](assets/s.png)\n\nSlide 2, 08:16\n\n*Slides 1–2, 07:24–11:05*\n"
+            "*Slides 54–55, 1:30:30–1:35:05 (recording ends at the break)*")
+    assert without_times(text) == ("![Slide 2](assets/s.png)\n\nSlide 2\n\n*Slides 1–2*\n"
+                                   "*Slides 54–55 (recording ends at the break)*")

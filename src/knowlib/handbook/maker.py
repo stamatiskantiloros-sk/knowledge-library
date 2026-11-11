@@ -432,17 +432,48 @@ table { border-collapse: collapse; margin: 1em 0; }
 th, td { border: 1px solid #bbb; padding: 3px 8px; }
 blockquote { border-left: 3px solid #bbb; margin-left: 0; padding-left: 1em; color: #333; }
 h2 { break-after: avoid; } img, table { break-inside: avoid; }
+.kl-sign-off, .kl-tagline { text-align: center; margin-top: 2em; color: #555; }
+.kl-tagline { font-style: italic; margin-top: 0.5em; }
 </style>
 """
 
 
-def _export(out: Path) -> str | None:
-    """Pandoc writes MathML and Chrome prints it; WeasyPrint does not render MathML."""
+def _export(out: Path, cfg: dict | None = None, root: Path | None = None) -> str | None:
+    """Pandoc writes MathML and Chrome prints it; WeasyPrint does not render MathML. The library's
+    handbook.style_file replaces the default style; its signature goes in every page's footer (a page
+    margin box, beside the page number) and, with the tagline, at the end."""
     if not shutil.which("pandoc") or not CHROME.exists():
         return None
-    (out / ".style.html").write_text(PDF_CSS, encoding="utf-8")
-    r = subprocess.run(["pandoc", "handbook.md", "-s", "--mathml", "--metadata", "pagetitle=Handbook",
-                        "-H", ".style.html", "-o", ".print.html"], cwd=out, capture_output=True, text=True)
+    import html
+    hb = (cfg or {}).get("handbook") or {}
+    css = PDF_CSS
+    if hb.get("style_file"):
+        path = Path(hb["style_file"]).expanduser()
+        path = path if path.is_absolute() else (root or out) / path
+        if path.exists():
+            css = path.read_text(encoding="utf-8")
+            css = css if "<style" in css else f"<style>\n{css}\n</style>\n"
+        else:
+            log.warning("handbook.style_file %s not found; using the default style", path)
+    if hb.get("signature"):                                # a page footer: the signature and the page number
+        sig = str(hb["signature"]).replace("\\", "").replace('"', "'")
+        # first, so a library's style can restyle the footer in its own @page rule (fonts do not inherit there)
+        footer = ('@page { @bottom-center { content: "' + sig + '"; font-size: 7.5pt; color: #8a7a80; } '
+                  '@bottom-right { content: counter(page); font-size: 8pt; color: #8a7a80; } }\n')
+        css = re.sub(r"<style[^>]*>", lambda m: m.group(0) + "\n" + footer, css, count=1)
+    (out / ".style.html").write_text(css, encoding="utf-8")
+    before = ""
+    after = (f'<div class="kl-sign-off">{html.escape(hb["signature"])}</div>\n' if hb.get("signature") else "") + \
+            (f'<div class="kl-tagline">{html.escape(hb["tagline"])}</div>\n' if hb.get("tagline") else "")
+    (out / ".before.html").write_text(before, encoding="utf-8")
+    (out / ".after.html").write_text(after, encoding="utf-8")
+    lang = {"english": "en", "greek": "el"}.get(str(hb.get("language", "English")).lower(), "en")
+    r = subprocess.run(["pandoc", "handbook.md", "-s", "--math-method=mathml", "--metadata", "pagetitle=Handbook",
+                        "--metadata", f"lang={lang}",                    # lets Chrome hyphenate justified text
+                        "-H", ".style.html", "-B", ".before.html", "-A", ".after.html", "-o", ".print.html"],
+                       cwd=out, capture_output=True, text=True)
+    (out / ".before.html").unlink(missing_ok=True)
+    (out / ".after.html").unlink(missing_ok=True)
     if r.returncode == 0:
         r = subprocess.run([str(CHROME), "--headless", "--disable-gpu", "--no-pdf-header-footer",
                             f"--print-to-pdf={out / 'handbook.pdf'}", (out / ".print.html").as_uri()],
@@ -564,8 +595,13 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     shown = draft + "\n".join(s.text for s in lecture.slides if f"[[slide {s.n}]]" in draft)   # a later build of the slide
     issues += [f"slide {s.n}: table numbers not in the text: {', '.join(lost)}" for s in lecture.slides
                if f"[[slide {s.n}]]" not in draft and (lost := missing_table_numbers(shown, s))]
-    (out / "handbook.md").write_text(_place_figures(draft, lecture.slides, lecture, out, issues), encoding="utf-8")
-    issues += personal_information(out, _library_config(folder))
+    cfg = _library_config(folder)
+    hb = cfg.get("handbook") or {}
+    book = _place_figures(draft, lecture.slides, lecture, out, issues)
+    if not hb.get("show_times", True):
+        book = without_times(book)
+    (out / "handbook.md").write_text(book, encoding="utf-8")
+    issues += personal_information(out, cfg, allow=[hb.get("signature"), hb.get("tagline")])
     flagged = [s for s in lecture.slides if s.flagged]
     corrections = out / "corrections.md"
     review = [f"# Review: {lecture.title}", "", f"Source: {lecture.source_id}", "", "## To check", ""]
@@ -576,26 +612,42 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     review += [f"- Slide {s.n} ({s.start})" for s in flagged] or ["None."]
     (out / "review.md").write_text("\n".join(review) + "\n", encoding="utf-8")
     return {"lecture": lecture.title, "issues": len(issues), "flagged": len(flagged),
-            "output": str(out), "pdf": _export(out)}
+            "output": str(out), "pdf": _export(out, cfg, _library_root(folder))}
+
+
+def _library_root(md: Path) -> Path | None:
+    for d in [md.parent, *md.parents]:
+        if (d / "_knowlib" / "config.yaml").exists():
+            return d
+    return None
 
 
 def _library_config(md: Path) -> dict:
     """The config of the library the lecture belongs to (found by walking up to its _knowlib)."""
     from ..config import DEFAULTS, load_config
-    for d in [md.parent, *md.parents]:
-        if (d / "_knowlib" / "config.yaml").exists() or (d / "config.yaml").exists() and (d / "_knowlib").exists():
-            return load_config(d)
-    return DEFAULTS
+    root = _library_root(md)
+    return load_config(root) if root else DEFAULTS
 
 
-def personal_information(out: Path, cfg: dict) -> list[str]:
+def without_times(text: str) -> str:
+    """Slide captions and section endings without recording times: 'Slide 2' not 'Slide 2, 08:16'."""
+    text = re.sub(r"(!\[Slide \d+), [\d:]+\]", r"\1]", text)
+    text = re.sub(r"^(Slide \d+), [\d:]+$", r"\1", text, flags=re.M)
+    return re.sub(r"(\*Slides? [\d–, -]+?), [\d:]+–[\d:]+", r"\1", text)
+
+
+def personal_information(out: Path, cfg: dict, allow: list | None = None) -> list[str]:
     """Personal information in the finished handbook: emails, phone numbers and privacy.names, in its
     text and, read by classic OCR on this machine, in every image it shows. A handbook with any is not
     ready to share."""
     names = privacy.names(cfg)
     issues = []
     text = (out / "handbook.md").read_text(encoding="utf-8")
-    if why := privacy.reasons(text, names):
+    checked = text
+    for a in allow or []:                                  # the author's own signature, declared in the config
+        if a:
+            checked = checked.replace(str(a), "")
+    if why := privacy.reasons(checked, names):
         issues.append(f"personal information in the text ({', '.join(why)}): remove it")
     from ..media.ocr import apple_vision
     for img in sorted(set(re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text))):

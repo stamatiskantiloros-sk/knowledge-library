@@ -90,6 +90,10 @@ DEFAULTS: dict[str, Any] = {
     },
     "handbook": {                        # overrides of frame_selection for the writing model
         "language": "English",
+        "style_file": None,                  # a CSS file (relative to the library) for the PDF; None: the plain default
+        "signature": None,                   # a line printed on the title block and at the foot of every page
+        "tagline": None,                     # a line printed at the end
+        "show_times": True,                  # recording times in slide captions and section endings
         "max_tokens": 6000,
     },
     "digest": {                          # book finding aids; overrides of frame_selection for the reading model
