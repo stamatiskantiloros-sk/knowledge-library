@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -205,6 +206,8 @@ def check(cfg: dict, role: str, *, full: bool = False) -> tuple[bool, str]:
     for reading and the context window for the digest."""
     sec = section(cfg, role)
     b = sec.get("backend", "mlx-vlm")
+    if role == "review" and (conflict := writer_conflict(cfg)) and conflict[0] == "error":
+        return False, conflict[1]
     if b == "agent":
         if cfg.get("local_only"):
             return False, "local_only is set, so nothing may go to a session model"
@@ -383,3 +386,40 @@ def usage(cfg: dict, role: str) -> list[str]:
     from .providers import quota
     from .providers.chain import member_sections
     return quota.report([(m["key"], m["limits"], m["tz"]) for m in member_sections(sec, cfg)])
+
+
+# ---- keeping the reviewer independent of the writer -------------------------------------------
+
+def role_models(cfg: dict, role: str) -> list[str]:
+    """The model names a role can use: each chain member, or its one model."""
+    sec = section(cfg, role)
+    if sec.get("backend") == "chain":
+        return [str(e).partition("/")[2] for e in sec.get("chain") or []]
+    return [m for m in (sec.get("agent_model"), sec.get("openai_model"), sec.get("api_model"),
+                        sec.get("ollama_model")) if m and m != "the session"][:1]
+
+
+def _base(name: str) -> str:
+    return str(name).lower().rsplit("/", 1)[-1].removeprefix("models/")
+
+
+def family(name: str) -> str:
+    """'gemini' for gemini-3.5-flash-lite, 'minimax' for minimaxai/minimax-m3.1-flash, ..."""
+    m = re.match(r"[a-z]+", _base(name))
+    return m.group(0) if m else _base(name)
+
+
+def writer_conflict(cfg: dict) -> tuple[str, str] | None:
+    """('error' | 'warning', message) when the review could be done by the model that wrote the notes
+    (an error), or by one of its family (a warning): a reviewer shares its writer's blind spots."""
+    writers = role_models(cfg, "writer")
+    reviewers = role_models(cfg, "review")
+    same = sorted({r for r in reviewers for w in writers if _base(r) == _base(w)})
+    if same:
+        return "error", (f"the review would use {', '.join(same)}, the model that writes the notes; "
+                         "take it out of the review with `knowlib models`")
+    kin = sorted({r for r in reviewers for w in writers if family(r) == family(w)})
+    if kin:
+        return "warning", (f"{', '.join(kin)} in the review is of the same family as the writer "
+                           f"({', '.join(writers)}) and may share its blind spots")
+    return None

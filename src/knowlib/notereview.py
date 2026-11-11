@@ -60,6 +60,25 @@ Reply with JSON only: one entry per task id, each holding exactly the JSON that 
 LEVEL = {"unsupported": "error", "partly": "warning", "unclear": "warning"}
 
 
+VERDICT_RE = re.compile(r'\{\s*"n"\s*:\s*"?(\d+)"?\s*,\s*(?:"verdict"\s*:\s*)?"(supported|partly|unsupported|unclear)"'
+                        r'\s*(?:,\s*"reason"\s*:\s*"((?:[^"\\]|\\.)*)")?', re.I)
+
+
+def salvage(reply: str, slugs: list[str]) -> dict:
+    """Each note's verdicts from a batch reply whose JSON does not parse as a whole (a missing key
+    or brace in thousands of characters): the reply is cut at each note's id, and every complete
+    verdict in its section is kept."""
+    marks = sorted((m.start(), slug) for slug in slugs for m in [re.search(r'"%s"\s*:' % re.escape(slug), reply)] if m)
+    out = {}
+    for k, (start, slug) in enumerate(marks):
+        end = marks[k + 1][0] if k + 1 < len(marks) else len(reply)
+        claims = [{"n": int(n), "verdict": v.lower(), "reason": (r or "").replace('\\"', '"')}
+                  for n, v, r in VERDICT_RE.findall(reply[start:end])]
+        if claims:
+            out[slug] = {"claims": claims}
+    return out
+
+
 def review_in_batches(todo: list[tuple[str, str, int]], provider, cache, nr: dict) -> int:
     """Ask a long-context API model about many notes per request, up to its token budget, and cache
     each note's answer under that note's own prompt, so the per-note pass finds it. todo holds
@@ -69,7 +88,9 @@ def review_in_batches(todo: list[tuple[str, str, int]], provider, cache, nr: dic
     budget = provider.budget()
     if budget <= 0 or len(todo) < 2:
         return 0
-    most_notes, out_cap = int(nr.get("batch_notes", 12)), int(nr.get("batch_max_tokens", 60000))
+    most_notes, out_cap = int(nr.get("batch_notes", 1)), int(nr.get("batch_max_tokens", 60000))
+    if most_notes < 2:
+        return 0
     batches, cur, size = [], [], 0
     for item in todo:
         t = estimate_tokens(item[1]) + 40
@@ -87,8 +108,13 @@ def review_in_batches(todo: list[tuple[str, str, int]], provider, cache, nr: dic
         tasks = "\n\n".join(f"=== TASK {slug} ===\n{prompt}\n=== END {slug} ===" for slug, prompt, _ in batch)
         try:
             reply = provider.generate([], BATCH_PROMPT.format(n=len(batch), tasks=tasks), max_tokens=out_cap)
-            answers = parse_json(reply).get("notes") or {}
-        except (OSError, RuntimeError, ValueError) as e:
+            try:
+                answers = parse_json(reply).get("notes") or {}
+            except ValueError:
+                answers = {}
+            if len(answers) < len(batch):               # broken JSON: keep every complete verdict
+                answers = {**salvage(reply, [slug for slug, _, _ in batch]), **answers}
+        except (OSError, RuntimeError) as e:
             if type(e).__name__ == "NotEnoughMemory":
                 raise
             print(f"review: batch {i} failed ({str(e)[:120]}); its notes go one at a time", file=sys.stderr)
@@ -145,6 +171,11 @@ def run(root: Path, *, note_slugs: list[str] | None = None, overrides: dict | No
     cfg = ctx.config
     cfg.setdefault("agent_dir", str(ctx.work_dir / "agent"))
     nr = cfg["notes_review"]
+    from .models import writer_conflict
+    if conflict := writer_conflict(cfg):                # checked even with --no-model-check
+        if conflict[0] == "error":
+            raise SystemExit(f"review-notes: {conflict[1]}")
+        print(f"review-notes: warning: {conflict[1]}", file=sys.stderr)
     section = reviewer_section(cfg)
     provider = get_vision_provider(section, cfg)      # refuses anything remote when the library is local_only
     remote = not getattr(provider, "is_local", True)

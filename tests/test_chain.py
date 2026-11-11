@@ -147,7 +147,9 @@ def test_review_batches_many_notes_into_one_request_and_caches_each(fake, tmp_pa
     fake.queue["lite"] = [(200, {"choices": [{"message": {"content": json.dumps({"notes": answers})},
                                               "finish_reason": "stop"}]})]
     cache = Cache(tmp_path / "c.json")
-    done = review_in_batches([("a", "prompt a", 1), ("b", "prompt b", 1), ("c", "prompt c", 1)], chain, cache, {})
+    assert review_in_batches([("a", "prompt a", 1), ("b", "prompt b", 1)], chain, cache, {}) == 0   # off by default
+    done = review_in_batches([("a", "prompt a", 1), ("b", "prompt b", 1), ("c", "prompt c", 1)], chain, cache,
+                             {"batch_notes": 12})
     assert done == 2 and fake.calls == ["lite"]
     assert json.loads(cache.lookup(chain, "prompt b"))["claims"][0]["verdict"] == "partly"
     assert cache.lookup(chain, "prompt c") is None                    # left for the per-note pass
@@ -180,3 +182,13 @@ def test_a_digest_batch_cut_off_at_the_token_limit_drops_its_last_part(fake, tmp
     cache = Cache(tmp_path / "d.json")
     assert digest_in_batches(["p1", "p2"], chain, cache, {}) == 1
     assert cache.lookup(chain, "p1") and cache.lookup(chain, "p2") is None
+
+
+def test_a_batch_reply_with_broken_json_keeps_every_complete_verdict():
+    from knowlib.notereview import salvage
+    reply = ('{"notes": {"a": {"claims": [{"n": 1, "verdict": "supported", "reason": "ok"}, '
+             '{"n": 2, "partly", "reason": "the key is missing"}]}, "b": {"claims": [{"n": 1, "verdict": '
+             '"unsupported", "reason": "says \\"no\\""}]}')                # and the closing braces
+    got = salvage(reply, ["a", "b"])
+    assert [c["verdict"] for c in got["a"]["claims"]] == ["supported", "partly"]
+    assert got["b"]["claims"][0]["reason"] == 'says "no"'

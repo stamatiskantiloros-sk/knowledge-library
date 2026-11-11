@@ -327,6 +327,36 @@ def cmd_digest(args) -> int:
     return 0
 
 
+def cmd_check_figures(args) -> int:
+    from .config import load_config
+    from .figcheck import check_book, report
+    from .providers import get_vision_provider
+    root = _lib(args)
+    cfg = load_config(root, parse_sets(args.set))
+    sec = (cfg["pdf"].get("figures") or {}).get("second_model")
+    if not sec:
+        print("set pdf.figures.second_model in the config (a provider section, e.g. a chain of another family "
+              "than the model that read the figures)", file=sys.stderr)
+        return 2
+    lay, manifest = open_layout(root)
+    provider = get_vision_provider(sec, cfg)
+    sources = lay.all_sources(manifest.entries)
+    out_dir = lay.work / "figures"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    code = 0
+    for sid, md in sorted(sources.items()):
+        if args.ids and sid not in args.ids or not (lay.assets_dir(sid) / "figures").exists():
+            continue
+        results = check_book(sid, md, lay.assets_dir(sid), out_dir / "figures_cache.json", provider,
+                             scope=args.scope, parallel=args.parallel, limit=args.limit or None)
+        text = report(sid, results)
+        (out_dir / f"crosscheck-{sid}.md").write_text(text, encoding="utf-8")
+        print(text)
+        code = code or int(any(r.get("disagreements") for r in results))
+    provider.close()
+    return code
+
+
 def cmd_pending(args) -> int:
     print("\n".join(open_layout(_lib(args))[1].pending_synthesis()))
     return 0
@@ -400,6 +430,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     s.add_argument("--no-model-check", action="store_true", help="skip the check that the models answer")
     s.set_defaults(fn=cmd_digest)
+    s = lib(sub.add_parser("check-figures", help="a second vision model rereads flagged figures and tables"))
+    s.add_argument("--ids", nargs="*", default=[], help="only these source ids")
+    s.add_argument("--scope", default="flagged+tables", choices=["flagged+tables", "flagged", "tables", "all"])
+    s.add_argument("--parallel", type=int, default=1, help="requests at a time (free APIs queue the rest)")
+    s.add_argument("--limit", type=int, default=0, help="only the first N figures, to try a model")
+    s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    s.set_defaults(fn=cmd_check_figures)
     lib(sub.add_parser("status")).set_defaults(fn=cmd_status)
     lib(sub.add_parser("qa")).set_defaults(fn=cmd_qa)
     s = lib(sub.add_parser("check-notes", help="citations, duplicates and consolidation of the topic notes"))

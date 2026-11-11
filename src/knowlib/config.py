@@ -105,6 +105,10 @@ DEFAULTS: dict[str, Any] = {
         "max_tokens": 4000,
         "max_passage_chars": 8000,           # each cited passage is cut to this length
         "retries": 1,                        # a reply cut off at the token limit is asked again with twice the tokens
+        # Notes per request for a chain. 1 (the default) asks about each note on its own: in a test with
+        # planted errors, Gemini 3.5 Flash-Lite caught 12 of 16 one note at a time, 9 three at a time
+        # and 5 six at a time. Raise it only to stretch a small daily quota.
+        "batch_notes": 1,
     },
     "providers": {
         # API providers that a role's chain can use (backend: chain, chain: [<provider>/<model>, ...]).
@@ -131,6 +135,19 @@ DEFAULTS: dict[str, Any] = {
                                        "reasoning_effort": None},
             },
         },
+        "nvidia": {
+            # build.nvidia.com: free for development, rate-limited (about 40 requests a minute), no daily
+            # quota published. Requests queue: a minute or more is normal, and a request still running
+            # after about 300 s is cut off by NVIDIA's gateway, so keep requests to one figure or note.
+            "base_url": "https://integrate.api.nvidia.com/v1",
+            "api_key_env": "NVIDIA_API_KEY",
+            "api_key_file": "~/.nvidia_key",
+            "timeout_s": 320,
+            "models": {
+                "nvidia/nemotron-3.5-super-vl-120b-a12b": {"rpm": 40, "context": 128000},
+                "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": {"rpm": 40, "context": 128000},
+            },
+        },
     },
     "ocr_crosscheck": {
         "backends": ["apple-vision"],        # apple-vision | tesseract ; add tesseract as a third opinion
@@ -154,6 +171,8 @@ DEFAULTS: dict[str, Any] = {
         "figures": {                         # pictures inside PDFs (Docling only), read by the vision model
             "read": True,
             "model": None,                   # a provider section; defaults to images.model, then the strong model (caption_model)
+            "second_model": None,            # a provider section of another family: rereads OCR-flagged figures and
+                                             # tables and reports where the two readings differ (knowlib check-figures)
             "max_tokens": 8000,              # a big table, plus the strong model's thinking; doubled on each retry
             "retries": 2,                    # ask again after an empty or cut-off reply, with twice the tokens each time
             "detail_check": "stop",          # stop | warn | off: before reading, check the server does not cap image tokens

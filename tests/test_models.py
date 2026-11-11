@@ -222,3 +222,18 @@ def test_a_chain_role_is_saved_described_and_checked_member_by_member(tmp_path):
         srv.close()
     with pytest.raises(ValueError, match="provider"):
         models.parse_spec("chain:lite")
+
+
+def test_the_writers_model_may_not_review_and_its_family_is_a_warning(tmp_path):
+    root = library(tmp_path, "providers:\n  g: {base_url: 'http://127.0.0.1:9/v1', models: {}}\n"
+                             "  n: {base_url: 'http://127.0.0.1:9/v1', models: {}}\n")
+    models.save(root, {"writer": {"backend": "agent", "agent_model": "minimax-m3.1-flash"},
+                       "review": models.parse_spec("chain:g/gemini-3.5-flash-lite,n/minimaxai/minimax-m3.1-flash")})
+    cfg = load_config(root)
+    level, msg = models.writer_conflict(cfg)
+    assert level == "error" and "minimax-m3.1-flash" in msg
+    assert models.check(cfg, "review") == (False, msg)
+    models.save(root, {"review": models.parse_spec("chain:g/gemini-3.5-flash-lite,n/minimaxai/minimax-m2")})
+    assert models.writer_conflict(load_config(root))[0] == "warning"
+    models.save(root, {"review": models.parse_spec("chain:g/gemini-3.5-flash-lite")})
+    assert models.writer_conflict(load_config(root)) is None
