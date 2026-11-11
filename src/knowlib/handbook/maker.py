@@ -432,6 +432,7 @@ table { border-collapse: collapse; margin: 1em 0; }
 th, td { border: 1px solid #bbb; padding: 3px 8px; }
 blockquote { border-left: 3px solid #bbb; margin-left: 0; padding-left: 1em; color: #333; }
 h2 { break-after: avoid; } img, table { break-inside: avoid; }
+.kl-byline { text-align: center; color: #555; font-style: italic; margin: 0 0 1.5em; }
 .kl-sign-off, .kl-tagline { text-align: center; margin-top: 2em; color: #555; }
 .kl-tagline { font-style: italic; margin-top: 0.5em; }
 </style>
@@ -455,12 +456,13 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None) -> str
             css = css if "<style" in css else f"<style>\n{css}\n</style>\n"
         else:
             log.warning("handbook.style_file %s not found; using the default style", path)
-    if hb.get("signature"):                                # a page footer: the signature and the page number
+    # page numbers, and the signature if any, in the page footer; first in the style so a library's
+    # own @page rule can restyle them (fonts do not inherit into page margins)
+    footer = "@page { @bottom-right { content: counter(page); font-size: 8pt; color: #8a7a80; }"
+    if hb.get("signature"):
         sig = str(hb["signature"]).replace("\\", "").replace('"', "'")
-        # first, so a library's style can restyle the footer in its own @page rule (fonts do not inherit there)
-        footer = ('@page { @bottom-center { content: "' + sig + '"; font-size: 7.5pt; color: #8a7a80; } '
-                  '@bottom-right { content: counter(page); font-size: 8pt; color: #8a7a80; } }\n')
-        css = re.sub(r"<style[^>]*>", lambda m: m.group(0) + "\n" + footer, css, count=1)
+        footer += ' @bottom-center { content: "' + sig + '"; font-size: 7.5pt; color: #8a7a80; }'
+    css = re.sub(r"<style[^>]*>", lambda m: m.group(0) + "\n" + footer + " }\n", css, count=1)
     (out / ".style.html").write_text(css, encoding="utf-8")
     before = ""
     after = (f'<div class="kl-sign-off">{html.escape(hb["signature"])}</div>\n' if hb.get("signature") else "") + \
@@ -468,12 +470,20 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None) -> str
     (out / ".before.html").write_text(before, encoding="utf-8")
     (out / ".after.html").write_text(after, encoding="utf-8")
     lang = {"english": "en", "greek": "el"}.get(str(hb.get("language", "English")).lower(), "en")
-    r = subprocess.run(["pandoc", "handbook.md", "-s", "--math-method=mathml", "--metadata", "pagetitle=Handbook",
+    source = "handbook.md"
+    if hb.get("byline"):                                   # one line under the title, in the PDF only
+        md = (out / "handbook.md").read_text(encoding="utf-8")
+        line = f'\n<p class="kl-byline">{html.escape(str(hb["byline"]))}</p>\n'
+        md = re.sub(r"^(# .+)$", lambda m: m.group(1) + "\n" + line, md, count=1, flags=re.M)
+        (out / ".print.md").write_text(md, encoding="utf-8")
+        source = ".print.md"
+    r = subprocess.run(["pandoc", source, "-s", "--math-method=mathml", "--metadata", "pagetitle=Handbook",
                         "--metadata", f"lang={lang}",                    # lets Chrome hyphenate justified text
                         "-H", ".style.html", "-B", ".before.html", "-A", ".after.html", "-o", ".print.html"],
                        cwd=out, capture_output=True, text=True)
     (out / ".before.html").unlink(missing_ok=True)
     (out / ".after.html").unlink(missing_ok=True)
+    (out / ".print.md").unlink(missing_ok=True)
     if r.returncode == 0:
         r = subprocess.run([str(CHROME), "--headless", "--disable-gpu", "--no-pdf-header-footer",
                             f"--print-to-pdf={out / 'handbook.pdf'}", (out / ".print.html").as_uri()],
@@ -601,7 +611,7 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     if not hb.get("show_times", True):
         book = without_times(book)
     (out / "handbook.md").write_text(book, encoding="utf-8")
-    issues += personal_information(out, cfg, allow=[hb.get("signature"), hb.get("tagline")])
+    issues += personal_information(out, cfg, allow=[hb.get("signature"), hb.get("tagline"), hb.get("byline")])
     flagged = [s for s in lecture.slides if s.flagged]
     corrections = out / "corrections.md"
     review = [f"# Review: {lecture.title}", "", f"Source: {lecture.source_id}", "", "## To check", ""]
