@@ -424,7 +424,32 @@ def write_lecture(lecture: Lecture, materials: list[tuple[str, str]], provider, 
             "notes": used_notes, "output": str(out), "pdf": pdf}
 
 
+def approved_figure(out: Path, n: int) -> tuple[Path, dict, dict] | None:
+    """The figure folder (`knowlib figures`) for slide n with a verdict, if there is one: (folder, brief, verdict)."""
+    root = out / "figures"
+    if not root.is_dir():
+        return None
+    for d in sorted(root.iterdir()):
+        b, v = d / "brief.json", d / "verdict.json"
+        if b.exists() and v.exists():
+            brief = json.loads(b.read_text(encoding="utf-8"))
+            if brief.get("slide") == n:
+                return d, brief, json.loads(v.read_text(encoding="utf-8"))
+    return None
+
+
+def _figure_mm(d: Path) -> float | None:
+    """A drawn figure's printed width in mm, from its PDF (Typst draws at true size)."""
+    if not (d / "fig.pdf").exists():
+        return None
+    import pymupdf
+    with pymupdf.open(d / "fig.pdf") as doc:
+        return doc[0].rect.width * 25.4 / 72
+
+
 def _place_figures(text: str, part: list[Slide], lecture: Lecture, out: Path, issues: list[str]) -> str:
+    """[[slide N]] becomes the slide's image, or what `knowlib figures` made for it and the user approved:
+    a redrawn figure at its printed size ("accept"), a table ("table"), or nothing ("drop")."""
     by_n = {s.n: s for s in part}
 
     def image(m: re.Match) -> str:
@@ -432,6 +457,23 @@ def _place_figures(text: str, part: list[Slide], lecture: Lecture, out: Path, is
         if not s or not s.frame:
             issues.append(f"marker for slide {m[1]} has no image in this section")
             return ""
+        if found := approved_figure(out, s.n):
+            d, brief, verdict = found
+            kind = verdict.get("verdict")
+            if kind == "drop":
+                return ""
+            if kind == "table" and (d / "table.md").exists():
+                return (d / "table.md").read_text(encoding="utf-8").strip() + f"\n\nTable: Slide {s.n}, {s.start}"
+            if kind == "accept" and (d / "fig.png").exists():
+                (out / "assets").mkdir(exist_ok=True)
+                name = f"fig_{s.n:03d}.png"
+                shutil.copy2(d / "fig.png", out / "assets" / name)
+                attrs = ".kl-fig .wide" if brief.get("width") == "wide" else ".kl-fig"
+                if mm := _figure_mm(d):
+                    attrs += f" width={mm:.1f}mm"
+                return f"![Slide {s.n}, {s.start}](assets/{name}){{{attrs}}}"
+            if kind != "keep-slide":
+                issues.append(f"slide {s.n}: figure verdict {kind!r} has nothing to place; the slide is shown")
         src = lecture.folder / s.frame
         (out / "assets").mkdir(exist_ok=True)
         shutil.copy2(src, out / "assets" / src.name)
@@ -444,6 +486,7 @@ CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 PDF_CSS = """<style>
 body { max-width: none; font: 11pt/1.45 Georgia, serif; }
 img { max-width: 100%; display: block; margin: 1em auto; }
+figure:has(img.wide) { column-span: all; } img.kl-fig { height: auto; }
 table { border-collapse: collapse; margin: 1em 0; }
 th, td { border: 1px solid #bbb; padding: 3px 8px; }
 blockquote { border-left: 3px solid #bbb; margin-left: 0; padding-left: 1em; color: #333; }
@@ -662,6 +705,7 @@ def without_times(text: str) -> str:
     """Slide captions and section endings without recording times: 'Slide 2' not 'Slide 2, 08:16'."""
     text = re.sub(r"(!\[Slide \d+), [\d:]+\]", r"\1]", text)
     text = re.sub(r"^(Slide \d+), [\d:]+$", r"\1", text, flags=re.M)
+    text = re.sub(r"^(Table: Slide \d+), [\d:]+$", r"\1", text, flags=re.M)
     return re.sub(r"(\*Slides? [\d–, -]+?), [\d:]+–[\d:]+", r"\1", text)
 
 

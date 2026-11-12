@@ -155,7 +155,7 @@ def unsafe_python(code: str) -> str | None:
 
 
 def svg_text(svg: str) -> str:
-    svg = re.sub(r"<style.*?</style>", " ", svg, flags=re.S)
+    svg = re.sub(r"<(style|metadata)\b.*?</\1>", " ", svg, flags=re.S)   # metadata: a date reads as a phone number
     return html.unescape(re.sub(r"<[^>]+>", " ", svg))
 
 
@@ -208,9 +208,10 @@ def render(d: Path, tool: str, fs: dict) -> str:
         _run(["d2", "--theme", "0", "--pad", "16", *fonts, src.name, "fig.svg"], d)
         _run(["rsvg-convert", "-w", "1400", "-b", "white", "fig.svg", "-o", "fig.png"], d)
     elif tool == "typst":
-        _run(["typst", "compile", src.name, "fig.pdf"], d)
-        _run(["typst", "compile", "--ppi", "300", src.name, "fig.png"], d)
-        _run(["typst", "compile", src.name, "fig.svg"], d)
+        root = ["--root", str(d.parent)]       # figures may share a style file one level up ("../style.typ")
+        _run(["typst", "compile", *root, src.name, "fig.pdf"], d)
+        _run(["typst", "compile", *root, "--ppi", "300", src.name, "fig.png"], d)
+        _run(["typst", "compile", *root, src.name, "fig.svg"], d)
         import pymupdf
         with pymupdf.open(d / "fig.pdf") as doc:
             return " ".join(p.get_text() for p in doc)   # Typst's SVG draws text as paths
@@ -348,26 +349,90 @@ def folders(root: Path) -> list[Path]:
     return sorted(p for p in root.iterdir() if (p / "brief.json").exists())
 
 
+def _data_uri(path: Path, width: int = 900) -> str:
+    """The image inlined (scaled down, as JPEG), so the sheet opens anywhere as one small file."""
+    import base64
+    import io
+    from PIL import Image, UnidentifiedImageError
+    try:
+        im = Image.open(path)
+        im.load()
+    except (UnidentifiedImageError, OSError):          # unreadable: inline the file as it is
+        return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+    if im.width > width:
+        im = im.resize((width, round(im.height * width / im.width)))
+    buf = io.BytesIO()
+    im.convert("RGB").save(buf, "JPEG", quality=80, optimize=True)
+    kind = "jpeg"
+    return f"data:image/{kind};base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def md_table_html(md: str) -> str:
+    """A Markdown file of pipe tables and plain lines as HTML (enough for table.md)."""
+    out, rows = [], []
+
+    def flush():
+        if rows:
+            head, body = rows[0], [r for r in rows[1:] if not all(set(c) <= set("-: ") for c in r)]
+            out.append("<table><tr>" + "".join(f"<th>{html.escape(c)}</th>" for c in head) + "</tr>"
+                       + "".join("<tr>" + "".join(f"<td>{html.escape(c)}</td>" for c in r) + "</tr>" for r in body)
+                       + "</table>")
+            rows.clear()
+    for line in md.splitlines():
+        if line.strip().startswith("|"):
+            rows.append([c.strip() for c in line.strip().strip("|").split("|")])
+        else:
+            flush()
+            if line.strip():
+                out.append(f"<p>{html.escape(line.strip())}</p>")
+    flush()
+    return "".join(out)
+
+
 def sheet(root: Path) -> Path:
-    """review.html: slide | new figure | idea and verdict, one row per figure folder."""
-    rows = []
+    """review.html: per figure folder the slide, the new figure (or table) and the verdict. Images are
+    inlined, so the file is self-contained; the layout stacks on narrow screens."""
+    cards = []
     for d in folders(root):
         b = json.loads((d / "brief.json").read_text())
         v = json.loads((d / "verdict.json").read_text()) if (d / "verdict.json").exists() else {}
         r = json.loads((d / "report.json").read_text()) if (d / "report.json").exists() else {}
-        slide = (f'<img src="{Path(b["slide_image"]).resolve().as_uri()}">' if b.get("slide_image") else "")
-        new = f'<img src="{html.escape(d.name)}/fig.png">' if (d / "fig.png").exists() else "<em>no figure</em>"
-        rows.append(
-            f'<tr><td><b>{html.escape(d.name)}</b><br>slide {html.escape(str(b.get("slide", "")))}<br>'
-            f'{html.escape(b.get("tool", ""))}</td><td>{slide}</td><td>{new}</td>'
-            f'<td><p>{html.escape(b.get("idea", ""))}</p><p><b>{html.escape(v.get("verdict", "not judged"))}</b>: '
-            f'{html.escape(v.get("reason", ""))}</p><p class=s>checks: {html.escape(r.get("result", ""))}</p></td></tr>')
+        slide_path = Path(b["slide_image"]) if b.get("slide_image") else None
+        slide = (f'<img alt="slide" src="{_data_uri(slide_path)}">' if slide_path and slide_path.exists()
+                 else "<em>no slide image</em>")
+        if (d / "fig.png").exists():
+            new = f'<img alt="new figure" src="{_data_uri(d / "fig.png")}">'
+        elif (d / "table.md").exists():
+            new = '<div class="tbl">' + md_table_html((d / "table.md").read_text()) + "</div>"
+        else:
+            new = "<em>no figure</em>"
+        verdict = v.get("verdict", "not judged")
+        checks = f' · checks: {html.escape(r["result"])}' if r.get("result") else ""
+        cards.append(
+            f'<section><h2>{html.escape(d.name)} <span class="tag {html.escape(verdict)}">{html.escape(verdict)}</span></h2>'
+            f'<p class="meta">slide {html.escape(str(b.get("slide", "")))} · {html.escape(b.get("tool", ""))}{checks}</p>'
+            f'<p class="idea">{html.escape(b.get("idea", ""))}</p>'
+            f'<div class="pair"><figure><figcaption>Slide</figcaption>{slide}</figure>'
+            f'<figure><figcaption>New</figcaption>{new}</figure></div>'
+            f'<p class="why">{html.escape(v.get("reason", ""))}</p></section>')
     out = root / "review.html"
     out.write_text(
-        "<!doctype html><meta charset=utf-8><title>Figure review</title><style>body{font:14px Georgia,serif;"
-        "margin:20px;color:#1a1a1a}table{border-collapse:collapse;width:100%}td{border-bottom:1px solid #ddd3d5;"
-        "padding:10px;vertical-align:top}td img{width:100%;max-width:520px;border:1px solid #ddd3d5}"
-        "td:first-child{width:90px;color:#5a0f1b}td:last-child{width:28%}.s{color:#777;font-size:12px}"
-        "h1{color:#5a0f1b;font-weight:400}</style><h1>Figure review</h1><table><tr><th>Figure</th><th>Slide</th>"
-        "<th>New</th><th>Idea and verdict</th></tr>" + "".join(rows) + "</table>")
+        "<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>Figure review</title><style>"
+        ":root{--main:#5a0f1b;--accent:#3a3a3a;--tint:#f3eff0;--rule:#ddd3d5}"
+        "body{font:15px/1.45 Georgia,serif;margin:0 auto;padding:16px;max-width:1200px;color:#1a1a1a;background:#fff}"
+        "h1{color:var(--main);font-weight:400;margin:4px 0 16px}"
+        "section{border-top:1px solid var(--rule);padding:14px 0 18px}"
+        "h2{font-size:17px;margin:0 0 2px;color:var(--main)}"
+        ".tag{font-size:12px;padding:1px 7px;border-radius:9px;background:var(--tint);color:var(--accent);vertical-align:2px}"
+        ".tag.accept{background:var(--main);color:#fff}.tag.reject{background:#000;color:#fff}"
+        ".meta{color:#777;font-size:12.5px;margin:0 0 6px}.idea{margin:0 0 10px}.why{color:var(--accent);font-size:13.5px;margin:10px 0 0}"
+        ".pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}"
+        "@media (max-width:760px){.pair{grid-template-columns:minmax(0,1fr)}}"
+        "figure{margin:0;min-width:0}figcaption{font-size:12px;color:#777;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}"
+        "figure img{display:block;width:100%;height:auto;border:1px solid var(--rule)}"
+        ".tbl{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}"
+        "th{background:var(--main);color:#fff;text-align:left;padding:5px 7px}td{padding:5px 7px;vertical-align:top;border-bottom:1px solid var(--rule)}"
+        "tr:nth-child(even) td{background:var(--tint)}"
+        "</style><h1>Figure review</h1>" + "".join(cards) + "</html>")
     return out

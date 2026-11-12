@@ -280,3 +280,33 @@ def test_sheet_writes_review_html_with_both_folders_and_the_verdict(tmp_path):
     assert "accept" in page
     assert "Matches the slide" in page
     assert "not judged" in page
+
+
+# 8. The finish step places what the user approved instead of the slide screenshot
+
+def test_finish_places_approved_figures_tables_and_drops(tmp_path):
+    import json as _json
+    from PIL import Image
+    from knowlib.handbook.maker import Lecture, Slide, _place_figures, without_times
+    for n in (1, 2, 3, 4):
+        Image.new("RGB", (8, 6), "white").save(tmp_path / f"slide_{n:03d}.png")
+    slides = [Slide(n, "0:00", "1:00", frame=f"slide_{n:03d}.png") for n in (1, 2, 3, 4)]
+    lec = Lecture("lec", "L/", "Lecture 1", tmp_path, slides)
+    out = tmp_path / "out"
+    figs = out / "figures"
+    for name, n, verdict, extra in [("01-flow", 1, "accept", {"width": "wide"}), ("02-table", 2, "table", {}),
+                                    ("03-gone", 3, "drop", {})]:
+        d = figs / name
+        d.mkdir(parents=True)
+        (d / "brief.json").write_text(_json.dumps({"slide": n, **extra}))
+        (d / "verdict.json").write_text(_json.dumps({"verdict": verdict, "reason": "checked"}))
+    Image.new("RGB", (10, 10), "white").save(figs / "01-flow" / "fig.png")
+    (figs / "02-table" / "table.md").write_text("| A | B |\n| - | - |\n| 1 | 2 |\n")
+    issues = []
+    text = _place_figures("[[slide 1]]\n\n[[slide 2]]\n\n[[slide 3]]\n\n[[slide 4]]", slides, lec, out, issues)
+    assert "![Slide 1, 0:00](assets/fig_001.png){.kl-fig .wide}" in text      # drawn figure, wide
+    assert "| 1 | 2 |" in text and "Table: Slide 2, 0:00" in text            # table with its caption
+    assert "slide_003" not in text and "Slide 3" not in text                  # dropped
+    assert "![Slide 4, 0:00](assets/slide_004.png)" in text                   # no figure: the slide
+    assert (out / "assets" / "fig_001.png").exists() and not issues
+    assert "Table: Slide 2\n" in without_times(text) + "\n"
