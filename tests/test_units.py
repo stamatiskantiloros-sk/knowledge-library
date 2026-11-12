@@ -614,3 +614,29 @@ def test_citation_parts_inherit_the_source():
     from knowlib.notecheck import citations
     assert citations("x [@a, p. 4; p. 6] y [@b, slide 2; @c, 1:00]") == [
         ("a", "p. 4"), ("a", "p. 6"), ("b", "slide 2"), ("c", "1:00")]
+
+
+def test_write_notes_plan_and_pages(tmp_path):
+    from knowlib.notecheck import Source
+    from knowlib.writenotes import chapter_contents, chapter_starts, page_text, parse_plan
+    plan = ("- BR = brealey-1a (Brealey)\n- RO = ross-2b (Ross)\n\n## A. Valuation\n"
+            "Chapters: BR 5 (119), RO 8\n- npv-rule — the NPV rule\n- irr — IRR and payback\n\n"
+            "## B. Risk\nChapters: BR 7 (184)\n- capm-and-beta — beta and CAPM\n")
+    keys, themes = parse_plan(plan)
+    assert keys == {"BR": "brealey-1a", "RO": "ross-2b"}
+    assert [t["letter"] for t in themes] == ["A", "B"] and themes[0]["notes"][1] == ("irr", "IRR and payback")
+    digest = "# D\n\n## Contents\n\n- 8 NPV and Other Criteria, p. 628\n  - 8.1 NPV, p. 630\n- 9 Next, p. 706\n\n## Body\n"
+    starts = chapter_starts(themes, {"RO": digest})
+    assert starts["RO"] == [(628, 8)] and starts["BR"] == [(119, 5), (184, 7)]
+    assert chapter_contents(digest, 628, 705).splitlines() == ["- 8 NPV and Other Criteria, p. 628", "  - 8.1 NPV, p. 630"]
+    md = tmp_path / "b.pdf.md"
+    md.write_text("---\nid: b\n---\n<!-- page 1 (pdf 1) -->\nOne\n<!-- page 2 (pdf 2) -->\nTwo\n<!-- page 3 (pdf 3) -->\nThree\n")
+    assert page_text(Source(md, "b"), "1-2", 10_000) == "[@b, p. 1]\nOne\n\n[@b, p. 2]\nTwo"
+
+
+def test_write_notes_quotes_a_title_with_a_colon():
+    import yaml
+    from knowlib.writenotes import strip_fences
+    note = strip_fences("```markdown\n---\ntitle: Investment Criteria: IRR\nupdated: 2026-11-12\n---\n# X\n```")
+    fm = yaml.safe_load(note.split("---\n")[1])
+    assert fm["title"] == "Investment Criteria: IRR" and note.endswith("# X\n")

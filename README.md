@@ -111,6 +111,12 @@ knowlib models -L ~/Documents/MyCourse --use review=chain:google/gemini-3.5-flas
 knowlib models -L ~/Documents/MyCourse --check             # servers answer, vision without an image-token cap, context fits
 ```
 
+Notes are written by an agent (you, or session subagents), or by any other model through `knowlib write-notes`, which follows a synthesis plan (`notes/_synthesis-plan.md`) and takes the writer per run:
+
+```bash
+knowlib write-notes -L ~/Documents/MyCourse --theme C --writer 'server:https://gpu-box.example/v1|qwen3|GPU_KEY'
+```
+
 A provider is `server:<url>|<model>[|<env var with the key>]` (any OpenAI-compatible server), `lmstudio:<model>` (LM Studio on this machine, loaded and unloaded by knowlib), `session:haiku|sonnet|opus` (a Claude model through the Claude Code session) or `default`. The reviewer should not be the writer, and is best the strongest model available. Before `process`, `reprocess`, `digest` and `review-notes`, knowlib prints the models the run uses, checks they answer, stops with the fix if one does not, and asks again only when a choice changed (`--no-model-check` skips this).
 
 Everything else is in `config.yaml` (full list with defaults: `src/knowlib/config.py`). Examples:

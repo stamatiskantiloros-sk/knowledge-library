@@ -35,7 +35,9 @@ Open each new or updated source's Markdown ({{SOURCE_MD}}) and check, in this or
 Fix by reprocessing with a better backend where possible (edit `{{CONFIG}}` or the session's `session.yaml`, then `knowlib reprocess --ids <id>`). Do not hand-edit `source.md`: it is regenerated on reprocessing. Anything that cannot be fixed: leave the flag, log it in `notes/_qa-log.md` (date, source id, issue), and tell the user.
 
 ### 3. Synthesize
-Who writes is the `writer` role (`knowlib models`). If it is a session model other than yours, start subagents on that model, a chapter or a few sources each, and give them steps 1 to 8 below; you then check their notes and run step 9. If it is you, write them yourself.
+**Ask the user who writes, every run.** Before writing any note, show the configured `writer` role (`knowlib models`) and ask which writer to use this time: you, a session model (`session:sonnet`/`haiku`), a model server (`server:<url>|<model>|<KEY env>`), LM Studio (`lmstudio:<key>`) or an API chain (`chain:<provider>/<model>,...`). The choice is per run; do not change the config unless the user asks.
+- **You or a session model:** if it is you, write the notes yourself; otherwise start subagents on that model, a chapter or a few sources each, and give them steps 1 to 8 below. You then check their notes and run step 9.
+- **Any other model:** knowlib drives it. Write or reuse a synthesis plan (`notes/_synthesis-plan.md`: book keys, themes with `Chapters:` and `- <slug> — <what it covers>` lines), then run `knowlib write-notes -L . --writer <spec> --theme <letter>`. For each note it picks pages from the digests, writes the note, and revises it once against `check-notes`; it appends to `notes/_synthesis-log.md`. Run one theme first and read its notes with the user before running the rest. Then do steps 7 to 10 yourself (glossary, INDEX, check-notes, review-notes, mark-synthesized). The reviewer must not be the writer.
 
 For each id from `knowlib pending`:
 

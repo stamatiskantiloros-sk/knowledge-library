@@ -9,6 +9,7 @@
   knowlib qa [-L DIR]                every flag across sources, for the QA pass
   knowlib check-notes [-L DIR]       citations, duplicates and consolidation of the topic notes
   knowlib review-notes [-L DIR]      a second model judges every claim against its cited passages
+  knowlib write-notes --plan FILE    a model writes topic notes from the books (--writer picks it per run)
   knowlib reprocess --where K=V      mark matching sources stale and re-ingest them
   knowlib pending [-L DIR]           source ids not yet synthesized into notes
   knowlib mark-synthesized ID...     record that sources were synthesized
@@ -327,6 +328,26 @@ def cmd_digest(args) -> int:
     return 0
 
 
+def cmd_write_notes(args) -> int:
+    from . import writenotes
+    from .config import deep_merge
+    from .models import parse_spec
+    from .providers.agent import AgentJobsWaiting
+    root = _lib(args)
+    overrides = deep_merge(parse_sets(args.set), {"local_only": True} if args.local_only else {})
+    writer = parse_spec(args.writer) if args.writer else None
+    try:
+        written = writenotes.run(root, Path(args.plan) if Path(args.plan).is_absolute() else root / args.plan,
+                                 themes_wanted=[t.upper() for t in args.theme], notes_wanted=args.notes,
+                                 writer=writer, force=args.force, overrides=overrides)
+    except AgentJobsWaiting as e:
+        print(f"waiting for {e}: answer .work/agent/jobs.json, then run this again")
+        return 0
+    print(f"{len(written)} notes written: {', '.join(written) or '-'}")
+    print("next: knowlib check-notes, then knowlib review-notes (a model other than the writer)")
+    return 0
+
+
 def cmd_check_figures(args) -> int:
     from .config import load_config
     from .figcheck import check_book, report
@@ -449,6 +470,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--set", action="append", default=[], help="config override, e.g. notes_review.openai_model=google/gemma-4-12b")
     s.add_argument("--no-model-check", action="store_true", help="skip the check that the models answer")
     s.set_defaults(fn=cmd_review_notes)
+    s = lib(sub.add_parser("write-notes", help="a model writes topic notes from the books, following a plan"))
+    s.add_argument("--plan", default="notes/_synthesis-plan.md", help="the synthesis plan (themes, chapters, note slugs)")
+    s.add_argument("--theme", nargs="*", default=[], help="only these themes (letters)")
+    s.add_argument("--notes", nargs="*", default=[], help="only these note slugs")
+    s.add_argument("--writer", help="this run's writer: server:<url>|<model>|<KEY env>, chain:..., lmstudio:<key>, session:sonnet")
+    s.add_argument("--force", action="store_true", help="rewrite notes that exist")
+    s.add_argument("--local-only", action="store_true", help="refuse to send anything off this machine")
+    s.add_argument("--set", action="append", default=[], help="config override, e.g. notes_writer.max_pages=30")
+    s.set_defaults(fn=cmd_write_notes)
     s = lib(sub.add_parser("reprocess"))
     s.add_argument("--where", action="append", default=[], help="provenance filter, e.g. transcription.model=small")
     s.add_argument("--ids", nargs="*", default=[])
