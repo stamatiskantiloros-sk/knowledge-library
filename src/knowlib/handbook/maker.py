@@ -81,6 +81,7 @@ BRIEF_RULES = """You are writing the study book of one recorded lecture, for a s
 16. Leave out what is incomplete: a name, reference or point the recording lost or garbled is dropped, not reported with a note about the gap ("its name was lost in the recording").
 17. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point, without saying a student raised it.
 18. Be simple, focused and precise. Name what the lecture names: companies, organisations, products, places, years and numbers (privacy covers people, not companies). Never blur them into stand-ins ("a truck maker", "big customers", "some firms"). Short plain sentences: who did what, and why it matters; one example, stated once, with its point.
+19. Show each slide at its clearest. Slides often build up over several steps, highlight one part while dimming the rest, or carry an overlay; look at the slides before and after the one you want and show the step where everything is visible and nothing covers it, even if that step was not the one on screen while the point was made. Where a later slide repeats an earlier one and adds to it, show only the later one.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>"""
 
