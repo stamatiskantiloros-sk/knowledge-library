@@ -109,13 +109,18 @@ def load_notes(notes_dir: Path) -> list[Note]:
 
 
 def citations(line: str) -> list[tuple[str, str]]:
-    """[(source id, locator)] in a line; [@a, p. 4; @b, slide 7] is two citations."""
+    """[(source id, locator)] in a line; [@a, p. 4; @b, slide 7] is two citations, and so is
+    [@a, p. 4; p. 6]: a part without its own @id cites the same source as the part before it."""
     out = []
     for group in CITE.findall(line):
+        sid = None
         for part in group.split(";"):
             m = re.match(r"\s*@([\w.\-]+)\s*,?\s*(.*)", part)
             if m:
-                out.append((m[1], m[2].strip()))
+                sid = m[1]
+                out.append((sid, m[2].strip()))
+            elif sid and part.strip():
+                out.append((sid, part.strip()))
     return out
 
 

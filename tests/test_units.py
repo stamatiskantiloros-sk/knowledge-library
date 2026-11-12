@@ -587,3 +587,30 @@ def test_the_brief_calls_the_speaker_what_the_library_asks(tmp_path):
     lec = Lecture("lec", "L/", "Lecture 1", tmp_path, [Slide(1, "0:00", "1:00", text="Title")])
     out = brief(lec, [], speaker="the professor")
     assert 'Call the speaker "the professor"' in out and "the lecturer" not in out.split("## Slides")[0]
+
+
+def test_docx_highlights_are_marked():
+    from knowlib.ingestors.office import _mark_highlights
+    hl = '<w:rPr><w:highlight w:val="yellow"/></w:rPr>'
+    xml = ('<w:p><w:r><w:t>A. </w:t></w:r><w:r>' + hl + '<w:t>C</w:t></w:r>'
+           '<w:r>' + hl + '<w:t xml:space="preserve">.</w:t></w:r>'
+           '<w:r><w:rPr><w:highlight w:val="none"/></w:rPr><w:t>D.</w:t></w:r></w:p>')
+    out, n = _mark_highlights(xml)
+    assert n == 2
+    text = "".join(__import__("re").findall(r"<w:t\b[^>]*>([^<]*)</w:t>", out))
+    assert text == "A. ==C.==D."          # adjacent highlighted runs merge; val="none" is not a highlight
+
+
+def test_docx_bold_underline_is_marked():
+    from knowlib.ingestors.office import _mark_highlights
+    bu = '<w:rPr><w:b/><w:u w:val="single"/></w:rPr>'
+    xml = ('<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>A.</w:t></w:r>'
+           '<w:r>' + bu + '<w:t>D.</w:t></w:r></w:p>')
+    out, n = _mark_highlights(xml)
+    assert n == 1 and "==D.==" in out and "==A." not in out   # bold alone is not a mark
+
+
+def test_citation_parts_inherit_the_source():
+    from knowlib.notecheck import citations
+    assert citations("x [@a, p. 4; p. 6] y [@b, slide 2; @c, 1:00]") == [
+        ("a", "p. 4"), ("a", "p. 6"), ("b", "slide 2"), ("c", "1:00")]

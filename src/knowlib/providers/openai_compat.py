@@ -132,7 +132,9 @@ class OpenAICompatProvider(VisionProvider):
             body["reasoning_effort"] = self.reasoning_effort
         choice = self._post(body)["choices"][0]
         self.last_finish = choice.get("finish_reason")
-        reply = choice["message"]["content"] or ""
+        # Gemini leaves "content" out when a reply has no text (thinking spent the tokens, or it was
+        # blocked): treat that as an empty reply so the caller retries or flags it, not a crash.
+        reply = (choice.get("message") or {}).get("content") or ""
         reply = re.sub(r"<thought>.*?</thought>", "", reply, flags=re.S)   # Gemma's reasoning
         return reply.split("</think>")[-1].strip()           # reasoning models
 

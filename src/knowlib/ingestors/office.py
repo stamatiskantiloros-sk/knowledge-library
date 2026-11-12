@@ -16,9 +16,64 @@ from ..contract import SourceRecord, SourceWriter, hash_file, make_id, stage
 from .base import OFFICE_EXT, Context, Ingestor, IngestResult, InputItem, first_working, register
 
 
+_RUN = re.compile(r"<w:r\b(?:(?!</w:r>).)*?</w:r>", re.S)
+_TEXT = re.compile(r"(<w:t\b[^>]*>)([^<]*)(</w:t>)")
+
+
+def _mark_highlights(xml: str) -> tuple[str, int]:
+    """Wrap the text of marked runs in ==...== (Markdown's highlight), which Docling keeps as text.
+    A run is marked when it is highlighted, or both bold and underlined: authors use either to carry
+    meaning a converter drops, such as the correct option in an answer key. Adjacent marked runs merge
+    into one span."""
+    count = 0
+
+    def run(m: re.Match) -> str:
+        nonlocal count
+        r = m.group(0)
+        props = re.search(r"<w:rPr>.*?</w:rPr>", r, re.S)
+        p = props.group(0) if props else ""
+        hl = props and (re.search(r'<w:highlight w:val="(?!none")', p)
+                        or (re.search(r'<w:b(?: w:val="(?:1|true|on)")?/>', p)
+                            and re.search(r'<w:u w:val="(?!none")', p)))
+        if not hl or not "".join(t[1] for t in _TEXT.findall(r)).strip():
+            return r
+        count += 1
+        texts = list(_TEXT.finditer(r))
+        first, last = texts[0], texts[-1]
+        r = r[:last.start(2)] + last.group(2) + "==" + r[last.end(2):]
+        return r[:first.start(2)] + "==" + r[first.start(2):]
+
+    out = _RUN.sub(run, xml)
+    # merge spans split across runs: "==C==" "==.==" -> "==C.=="
+    out = re.sub(r"==(</w:t>(?:(?!<w:t\b).)*?<w:t\b[^>]*>)==", r"\1", out, flags=re.S)
+    return out, count
+
+
+def _with_marked_highlights(path: Path, tmp: Path) -> Path:
+    """A copy of a .docx with highlighted text marked, or the file itself when nothing is highlighted."""
+    import zipfile
+    if path.suffix.lower() != ".docx":
+        return path
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+        marked, n = _mark_highlights(xml)
+        if not n:
+            return path
+        copy = tmp / path.name
+        with zipfile.ZipFile(copy, "w", zipfile.ZIP_DEFLATED) as out:
+            for info in z.infolist():
+                out.writestr(info, marked.encode("utf-8") if info.filename == "word/document.xml"
+                             else z.read(info.filename))
+    return copy
+
+
 def _docling(path: Path, w: SourceWriter) -> str:
     from docling.document_converter import DocumentConverter
-    return DocumentConverter().convert(str(path)).document.export_to_markdown()
+    with tempfile.TemporaryDirectory() as tmp:
+        src = _with_marked_highlights(path, Path(tmp))
+        md = DocumentConverter().convert(str(src)).document.export_to_markdown()
+    md = md.replace(r"\=\=", "==")
+    return re.sub(r"==(\S[^=\n]*?)(\s+)==", r"==\1==\2", md)   # "==C. ==" -> "==C.== "
 
 
 def _pandoc(path: Path, w: SourceWriter) -> str:
