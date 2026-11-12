@@ -61,27 +61,35 @@ Rules:
 - Do not write the section heading, an introduction to the book, or closing remarks.
 Output only the section text."""
 
-BRIEF_RULES = """You are writing the study book of one recorded lecture, for a student who will read it instead of watching.
+BRIEF_RULES = """You are writing the study book of one recorded lecture: a synthesis of what was taught, for a student who will read it instead of attending. It follows the order in which the lecturer built the subject, but it is organised by idea, not by slide. The slides and what was said, below, are your sources, not your outline.
 
-1. Read every slide below in order, then write draft.md beside this brief: a # title, then ## sections in the order taught. The chapter breaks are yours.
-2. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
-3. Stay faithful. Keep the lecturer's definitions, examples and reasoning, and give a topic as much space as it got in class, never more. Remove filler and repetition. Each topic appears once.
-4. Write only what the lecture contains: no links ahead, summaries or comments on the method. Attribute to the lecturer only what the transcript says. "What it shows" is an automatic description, never a source of claims.
-5. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said.
-6. If the lecturer says something wrong, keep it and add a note saying so, plainly.
-7. Add a note only where the student cannot follow without it: a line starting "> **Note (not from class):**", one or two sentences, naming its source; for a book, also its page, from the `<!-- page N (pdf M) -->` line above the passage (N is the printed page). The passages below are the closest matches only: search all the course materials, listed at the end, for what the lecture leaves unclear, for conflicts with it, and to verify a note.
-8. Write [[slide N]] on its own line where the reader needs an image: charts, tables, diagrams, screens. Use LaTeX for formulas and Markdown tables, with the same number of cells in every row.
-9. End each section with its slides and times in italics. Call the speaker "the lecturer", without he or she.
-10. Name no one. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone in the room, even where the transcript or a slide shows one ([a person] marks a name taken out).
-11. A slide marked "Not discussed in the recording" was not taught in what was recorded: leave it out. Where a section cannot make sense without it, say in one line that the slide was shown but not discussed.
-12. Be condensed: the book follows the lecture's order, it is not an essay. Terse bullets, one idea each; fragments are fine. No restating, no connective prose, no anecdotes or class chatter that carry no idea, no explaining what the lecturer did not explain. Course admin only as far as a student must know it: grading, exam format and allowed aids, required readings, textbooks in one line. As a guide, write about a third of the transcript's length or less (roughly 30 words per minute of lecture).
-13. Let the arrangement show where things come from. Never write "on the slide", "the slide says", "(slide)" or "Slide:": what the slides show is the default, and the [[slide N]] lines and section endings already point to them. Mark only the lecturer's own additions, where it matters, by structure or a short lead ("the lecturer added", "with the lecturer's examples in brackets").
-14. Plain words a student understands without decoding: no shorthand labels or symbols in place of words ("Pick:", "=", "vs" as a verb); say "the lecturer's top priority", "means", "compared with".
-15. State things exactly as strongly as the source does: keep its hedges and its wording of degree ("that's a problem", not "it fails"; "can", "often", "may"). Do not upgrade an example into a rule or a reason into a definition.
-16. Leave out what is incomplete: a name, reference or point the recording lost or garbled is dropped, not reported with a note about the gap ("its name was lost in the recording").
-17. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point, without saying a student raised it.
-18. Be simple, focused and precise. Name what the lecture names: companies, organisations, products, places, years and numbers (privacy covers people, not companies). Never blur them into stand-ins ("a truck maker", "big customers", "some firms"). Short plain sentences: who did what, and why it matters; one example, stated once, with its point.
-19. Show each slide at its clearest. Slides often build up over several steps, highlight one part while dimming the rest, or carry an overlay; look at the slides before and after the one you want and show the step where everything is visible and nothing covers it, even if that step was not the one on screen while the point was made. Where a later slide repeats an earlier one and adds to it, show only the later one.
+What the book is
+1. Read everything below first: every slide, everything said, the course-material passages. Then write draft.md beside this brief: a # title, then ## sections, one per idea or topic, in the order the lecture develops them. Slide boundaries decide nothing: a section can draw on several slides and minutes of speech, or on a single remark.
+2. Synthesise. Say what was taught as clearly and briefly as it can be said: its definitions, examples, reasoning and numbers. Merge what was said in several places, and make the connections between ideas explicit where the lecture implies them. Choose the form that serves understanding (a definition, a short worked example, a comparison table, a line on why it matters), not the form of the slide. Each idea appears once.
+3. Teach only what the lecture taught. No summaries of your own, no links ahead, no comments on the method; attribute to the lecturer only what the transcript says. "What it shows" is an automatic description of a slide, never a source of claims.
+
+Slides: text or picture, never both
+4. Show a slide (write [[slide N]] on its own line) only where its picture carries what words cannot do as well: a model, a chart, a process or flow diagram, a table of data. The text around it then adds only what the picture does not say: the point, and what the lecturer said about it. A slide that is a list, a definition or a statement is written into the text and not shown.
+5. Show each slide at its clearest: look at the slides before and after it, and pick the step where everything is visible and nothing covers it (not a dimmed build or a slide with an overlay); where a later slide repeats an earlier one and adds to it, show only the later one.
+6. Cite the slides. After a definition, figure or fact taken from a slide, add a short "(slide N)", sparingly: once per fact, not after every sentence. End each section with its sources in italics on a line of their own: *Slides 10–13*. Never write "on the slide", "the slide says" or "Slide:": the citation and the arrangement show where things come from.
+7. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
+
+Accuracy
+8. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said. Use LaTeX for formulas and Markdown tables with the same number of cells in every row.
+9. State things exactly as strongly as the source does: keep its hedges and its wording of degree ("that's a problem", not "it fails"; "can", "often", "may"). Do not upgrade an example into a rule or a reason into a definition.
+10. Leave out what is incomplete: a name, reference or point the recording lost or garbled is dropped, not reported with a note about the gap.
+11. If the lecturer says something wrong, keep it and add a note saying so, plainly.
+12. Add knowledge from outside the lecture only where a student would otherwise trip: a line starting "> **Note (not from class):**", one or two sentences, naming its source; for a book, also its page, from the `<!-- page N (pdf M) -->` line above the passage (N is the printed page). The passages below are the closest matches only: search all the course materials, listed at the end, to find and verify a note.
+13. A slide marked "Not discussed in the recording" was not taught in what was recorded: leave it out. Where a section cannot make sense without it, say in one line that it was shown but not discussed.
+
+People
+14. Call the speaker "the lecturer", without he or she.
+15. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point.
+16. Name no one in the room. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone there, even where the transcript or a slide shows one ([a person] marks a name taken out). Companies, organisations and public figures the lecture names are named.
+
+Style
+17. Be condensed: terse bullets, one idea each, fragments where they read well, short plain sentences elsewhere. No restating, no connective padding, no anecdotes or class chatter that carry no idea. Course admin only as far as a student must know it: grading, exam format and allowed aids, required readings, textbooks in one line. As a guide, about a third of the transcript's length or less (roughly 30 words per minute of lecture).
+18. Be simple, focused and precise. Name what the lecture names: companies, products, places, years and numbers; never blur them into stand-ins ("a truck maker", "big customers"). Plain words a student understands without decoding: no shorthand labels or symbols in place of words ("Pick:", "=" for "means").
 
 When done, run: knowlib handbook --finish --output <the folder above this one>"""
 

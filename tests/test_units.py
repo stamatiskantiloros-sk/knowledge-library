@@ -561,7 +561,7 @@ def test_the_brief_marks_undiscussed_slides_redacts_names_and_lists_the_notes(tm
     out = brief(lec, [], notes_dir=tmp_path / "notes", names=["Maria"])
     assert "Maria" not in out and "a@example.org" not in out and "[a person]" in out
     assert out.split("### Slide 2", 1)[1].count("Not discussed in the recording") == 1
-    assert "Topic notes built from these materials" in out and "10. Name no one." in out
+    assert "Topic notes built from these materials" in out and "16. Name no one in the room." in out
 
 
 def test_finish_reports_personal_information_in_the_text_and_images(tmp_path, monkeypatch):
