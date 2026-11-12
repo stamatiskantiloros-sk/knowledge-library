@@ -21,7 +21,7 @@ from ..media import align as align_mod
 from ..media.frames import extract_frames, group_frames, resized_copy, save_candidates
 from ..media.ocr import crosscheck, recheck_without_recurring
 from ..media.select import caption_kept, fill_text_from_ocr, fmt_ts, kept_to_json, match_frame_to_text, select
-from ..media.session import assemble
+from ..media.session import assemble, join_parts
 from ..media.transcribe import map_segments, transcribe
 from ..providers import get_vision_provider, release_all
 from ..providers.agent import stop_if_waiting
@@ -54,6 +54,21 @@ def _seconds(t) -> float:
         return float(t)
     p = [float(x) for x in str(t).split(":")]
     return p[0] * 3600 + p[1] * 60 + p[2] if len(p) == 3 else p[0] * 60 + p[1] if len(p) == 2 else p[0]
+
+
+def mark_parts(body: str, parts: list[dict]) -> str:
+    """A lecture in parts: say where each part runs under the title, and label every timed heading
+    (`## Slide 4 (1:38:02–1:41:10)`) with the part it starts in."""
+    def part_of(t: float) -> str:
+        return next((p["name"] for p in reversed(parts) if t >= p["start_s"] - 0.5), parts[0]["name"])
+
+    def label(m: re.Match) -> str:
+        return f"{m[0]} · {part_of(_seconds(m[2]))}"
+    body = re.sub(r"^(##+ [^\n]*?\()(\d+:\d\d(?::\d\d)?)–[^)\n]*\)", label, body, flags=re.M)
+    note = "*Recorded in parts: " + "; ".join(
+        f"{p['name']} {fmt_ts(p['start_s'])}–{fmt_ts(p['end_s'])} ({p['file']})" for p in parts) + "*"
+    head, sep, rest = body.partition("\n\n")
+    return f"{head}{sep}{note}\n\n{rest}" if sep else body + "\n\n" + note
 
 
 def _reuse_earlier(path: Path, fingerprint: dict) -> None:
@@ -104,6 +119,7 @@ class MediaSessionIngestor(Ingestor):
             for f in ("alignment.json", "transcript.json", "candidates.json", "selection_cache.json"):
                 (work / f).unlink(missing_ok=True)
 
+        parts = join_parts(sess, item.sidecar["parts"], work) if item.sidecar.get("parts") else []
         flags: list[str] = []
         pipeline: dict = {"session": {"tool": "knowlib", "primary_audio": sess.primary_audio.name if sess.primary_audio else None,
                                       "primary_reason": sess.primary_reason}}
@@ -234,6 +250,9 @@ class MediaSessionIngestor(Ingestor):
         w = ctx.writer(sid)
         try:
             body = self._render(sess, segs, kept, w, cfg, flags, stats) + self._dropped(dropped, w)
+            if parts:
+                stats["parts"] = parts
+                body = mark_parts(body, parts)
             (w.asset_path("transcript.json")).write_text(
                 json.dumps(segs, ensure_ascii=False, indent=0), encoding="utf-8")
             if len(item.paths) > 1:

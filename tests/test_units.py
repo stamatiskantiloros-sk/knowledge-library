@@ -640,3 +640,24 @@ def test_write_notes_quotes_a_title_with_a_colon():
     note = strip_fences("```markdown\n---\ntitle: Investment Criteria: IRR\nupdated: 2026-11-12\n---\n# X\n```")
     fm = yaml.safe_load(note.split("---\n")[1])
     assert fm["title"] == "Investment Criteria: IRR" and note.endswith("# X\n")
+
+
+def test_lecture_in_parts_joins_audio_and_labels_slides(tmp_path):
+    import subprocess
+    from knowlib.ingestors.media import mark_parts
+    from knowlib.media.session import Session, join_parts
+    for name, secs in (("a.m4a", 2), ("b.m4a", 3)):
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"sine=frequency=440:duration={secs}",
+                        str(tmp_path / name)], check=True)
+    sess = Session(title="L1", folder=tmp_path, video=tmp_path / "screen.mov", audio_sources=[],
+                   primary_audio=None, primary_reason="")
+    parts = join_parts(sess, ["a.m4a", {"name": "After the break", "audio": "b.m4a"}], tmp_path)
+    assert [p["name"] for p in parts] == ["Part A", "After the break"]
+    assert sess.video is None and sess.primary_audio.suffix == ".flac"
+    assert abs(sess.info[sess.primary_audio.name]["duration"] - 5) < 0.2
+    assert abs(parts[1]["start_s"] - 2) < 0.1
+    body = "# L1\n\n*Duration 00:05*\n\n## Slide 1 (00:00–00:02)\ntext\n\n## Slide 2 (00:02–00:05)\nmore"
+    out = mark_parts(body, parts)
+    assert "## Slide 1 (00:00–00:02) · Part A" in out
+    assert "## Slide 2 (00:02–00:05) · After the break" in out
+    assert out.index("*Recorded in parts:") < out.index("*Duration")

@@ -13,9 +13,11 @@ session.yaml (all keys optional):
     fps: 2                             # e.g. fast screen recording / live coding
     tags: [mba, finance]
     files: [lecture.mp4, recorder.wav]  # explicit membership (otherwise: all media in the folder)
+    parts: [{name: Part A, audio: a.m4a}, {name: Part B, audio: b.m4a}]  # one lecture recorded in parts: audio joined in order
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -100,3 +102,41 @@ def assemble(paths: list[Path], folder: Path, sidecar: dict, work: Path) -> Sess
     return Session(title=title, folder=folder, video=video, audio_sources=audio_sources,
                    primary_audio=primary, primary_reason=reason, subtitles=subs, sidecar=sidecar,
                    info=info, glossary=_glossary(sidecar, folder))
+
+
+def join_parts(sess: Session, parts: list, work: Path) -> list[dict]:
+    """A lecture recorded in parts (session.yaml `parts:`): join their audio, in order, into one
+    recording that becomes the session's primary audio. Each part is a file name or
+    {name: Part A, audio: file}. Returns [{name, start_s, end_s}] on the joined timeline.
+    The video, if any, is left out: a lecture in parts is read from its audio and its deck."""
+    import hashlib
+    from .av import probe, require, run
+    items = []
+    for i, p in enumerate(parts):
+        d = {"audio": p} if isinstance(p, str) else dict(p)
+        f = sess.folder / d["audio"]
+        if not f.exists():
+            raise FileNotFoundError(f"session.yaml part {d['audio']} not found in {sess.folder}")
+        items.append((str(d.get("name") or f"Part {chr(65 + i)}"), f))
+    fp = hashlib.sha256(json.dumps([(n, f.name, f.stat().st_size) for n, f in items]).encode()).hexdigest()[:10]
+    out = work / f"parts-{fp}.flac"
+    if not out.exists():
+        cmd = [require("ffmpeg"), "-v", "error", "-y"]
+        for _, f in items:
+            cmd += ["-i", str(f)]
+        chain = "".join(f"[{i}:a]" for i in range(len(items)))
+        cmd += ["-filter_complex", f"{chain}concat=n={len(items)}:v=0:a=1,aformat=sample_rates=16000:channel_layouts=mono",
+                "-c:a", "flac", str(out.with_suffix(".tmp.flac"))]
+        run(cmd)
+        out.with_suffix(".tmp.flac").rename(out)
+    bounds, t = [], 0.0
+    for name, f in items:
+        d = sess.info.get(f.name, {}).get("duration") or probe(f)["duration"]
+        bounds.append({"name": name, "file": f.name, "start_s": round(t, 2), "end_s": round(t + d, 2)})
+        t += d
+    sess.info[out.name] = probe(out)
+    sess.video = None
+    sess.primary_audio = out
+    sess.audio_sources = [out]
+    sess.primary_reason = "parts joined in order: " + ", ".join(f"{b['name']} ({b['file']})" for b in bounds)
+    return bounds

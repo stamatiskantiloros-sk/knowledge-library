@@ -56,6 +56,7 @@ glossary: [WACC, CAPM, ΔΕΣΦΑ] # or a path to a text file; seeds Whisper's s
 primary_audio: recorder.wav    # the best recording; otherwise chosen by estimated SNR
 video: lecture.mp4            # if the folder holds several videos
 slides: slides.pdf            # the deck: ingested too and linked from the lecture
+parts: [part1.m4a, part2.m4a]  # one lecture recorded in parts: audio joined in order (or {name, audio} each)
 local_only: true              # block every API call for this session
 fps: 2                        # fast screen recordings / live coding
 tags: [mba, finance]
