@@ -311,3 +311,32 @@ A 95-minute lecture recorded as audio only, with a 65-slide deck, went through e
 - Pick each slide image at its clearest: in the first draft five of 22 were a dimmed animation step, a slide with an overlay banner, or an earlier slide that a later one repeats and extends (brief rule 19).
 - The PDF is checked page by page: no slide split across pages, no text squeezed beside stacked slides, no near-empty last page, one typeface throughout. Justified columns need the page language declared, or Chrome does not hyphenate and leaves wide gaps.
 - Recording times are left out of captions and section endings when the reader does not need them (`show_times: false`); a byline goes once under the title, not on every page.
+
+## 17. Figures in the handbook's style
+
+A slide screenshot carries the slide's colours, fonts and decoration into the book, and is often less clear than it could be. `knowlib figures` redraws the slides a draft shows. The strong model directs and judges; cheap models and open-source tools do the work.
+
+| Step | Who | What |
+|---|---|---|
+| Decide | the agent | Per slide shown: redraw, table, keep the slide (a photo or real artefact), or drop it (the text already says it). |
+| Brief | the agent | `brief.json`: the idea, the form, the tool, every label and number copied exactly, the layout, the emphasis. |
+| Draw | `handbook.figures.writer` (a cheap model) | Writes code for the tool. A render error goes back to it (`compile_retries`). |
+| Render | Graphviz, Mermaid, d2, Typst, matplotlib, Vega-Lite | SVG and PNG in the theme (`handbook.figures`: font, main, accent, tint, column width). |
+| Check | script | Every label appears in the figure's text; no personal information in a prompt or a figure (the figure is not made if there is). Matplotlib code may import only matplotlib and numpy and touch no files. |
+| Compare | `handbook.figures.checker` (a vision model) | The figure beside the slide: missing or wrong content, reversed arrows, unreadable text. |
+| Revise | `handbook.figures.reviser` | Up to `revisions` rounds with the label misses and the checker's issues. |
+| Judge | the agent | Looks at each figure beside its slide; fixes small things by hand (`knowlib figures render`); writes `verdict.json`. |
+| Show | `knowlib figures sheet` | `review.html`: slide, figure, idea and verdict side by side. Nothing enters the draft until the user approves. |
+
+**Choices and findings**
+- **Tool by form.**
+  - Graphviz: flows and hierarchies.
+  - Mermaid: swimlanes, timelines and 2×2 grids. It is rendered to PNG through Chrome, because `rsvg-convert` drops its HTML labels.
+  - d2: nested boxes, with an optional hand-drawn look.
+  - Typst with CeTZ or fletcher: precise layouts and formulas. Its SVG draws text as paths, so the label check reads its PDF.
+  - matplotlib or Vega-Lite: charts from the exact numbers.
+- **Why code, not image models.** Code draws labels and numbers exactly, while image-generation models misspell them. In November 2026 the free API keys gave no image model either: Gemini's image models answered "quota exceeded", and NVIDIA's SDXL was gone while its FLUX endpoints timed out.
+- **The cheap writer handles text, not layout.** In the first test (slide 25), Flash-Lite placed every label but left the six kinds of input as loose boxes. The vision checker caught it twice; the stronger model's revision fixed it after the guide said a list goes inside one box. Revisions therefore go to the stronger model, and the brief should state the grouping.
+- **Fixing render errors.** Repeated compile-fix rounds help less each time (TikZilla, 2026: about 49%, 55% and 59% of failing figures fixed after one, two and three rounds), hence three retries.
+- **Checking the picture.** Chart-to-code studies found that code which looks right can still draw the wrong chart, so the check is on the rendered image as well as the text.
+- **Width.** A figure sits one column wide in the two-column layout, so the brief asks for no wider than about 1.5:1. Long flows read better top to bottom.

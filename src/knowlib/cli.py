@@ -121,6 +121,8 @@ def cmd_doctor(args) -> int:
     for t in ("ffmpeg", "ffprobe", "pandoc", "tesseract", "soffice", "whisper-cli"):
         p = shutil.which(t) or (t == "soffice" and Path("/Applications/LibreOffice.app/Contents/MacOS/soffice").exists())
         print(f"  {ok(p)}{t}")
+    figs = [t for t in ("dot", "mmdc", "d2", "typst", "rsvg-convert") if not shutil.which(t)]
+    print(f"  {ok(not figs)}figure tools (knowlib figures)" + (f"  missing: {' '.join(figs)}" if figs else ""))
     if shutil.which("tesseract"):
         langs = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True).stdout.split()
         print(f"  {ok('ell' in langs)}tesseract Greek model (ell)" + ("" if "ell" in langs else "  -> brew install tesseract-lang"))
@@ -378,6 +380,23 @@ def cmd_check_figures(args) -> int:
     return code
 
 
+def cmd_figures(args) -> int:
+    from .config import load_config
+    from .handbook import figures
+    cfg = load_config(_lib(args), parse_sets(args.set))
+    maker = figures.Maker(cfg)
+    for target in args.dirs:
+        d = Path(target).expanduser().resolve()
+        if args.action == "sheet":
+            print(figures.sheet(d))
+        elif args.action == "render":
+            print(d.name, "missing labels:", maker.rerender(d) or "none")
+        else:
+            for f in ([d] if (d / "brief.json").exists() else figures.folders(d)):
+                print(f.name, maker.make(f).get("result"))
+    return 0
+
+
 def cmd_pending(args) -> int:
     print("\n".join(open_layout(_lib(args))[1].pending_synthesis()))
     return 0
@@ -458,6 +477,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--limit", type=int, default=0, help="only the first N figures, to try a model")
     s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     s.set_defaults(fn=cmd_check_figures)
+    s = lib(sub.add_parser("figures", help="redraw handbook slides in the handbook's style from design briefs"))
+    s.add_argument("action", choices=["make", "render", "sheet"],
+                   help="make: draw, check and compare each brief.json; render: render a hand-edited fig again; "
+                        "sheet: review.html with slide, figure and verdict")
+    s.add_argument("dirs", nargs="+", help="figure folders, or a folder of them")
+    s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    s.set_defaults(fn=cmd_figures)
     lib(sub.add_parser("status")).set_defaults(fn=cmd_status)
     lib(sub.add_parser("qa")).set_defaults(fn=cmd_qa)
     s = lib(sub.add_parser("check-notes", help="citations, duplicates and consolidation of the topic notes"))

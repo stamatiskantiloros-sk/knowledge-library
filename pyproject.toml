@@ -24,6 +24,7 @@ mac = ["mlx-whisper>=0.4.3", "mlx-vlm>=0.3.5", "ocrmac>=1.0", "torchvision"]
 docs = ["docling>=2.0", "python-pptx>=1.0", "pymupdf4llm>=0.0.17"]
 api = ["litellm>=1.50"]
 linux = ["faster-whisper>=1.0"]
+figures = ["matplotlib>=3.8", "vl-convert-python>=1.6"]   # charts for `knowlib figures`
 dev = ["pytest>=8"]
 
 [project.scripts]

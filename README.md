@@ -75,6 +75,7 @@ knowlib pending -L ~/KnowledgeLibrary            # sources not yet synthesized i
 knowlib digest -L ~/KnowledgeLibrary             # finding aid for each book (PDF of 100+ pages)
 knowlib handbook --prepare --output ~/Handbooks --only "<lecture>"   # brief for a study handbook
 knowlib handbook --finish --output ~/Handbooks   # check the draft, write handbook.md and .pdf
+knowlib figures make ~/Handbooks/<lecture>/figures   # redraw slides from the agent's design briefs
 ```
 
 Long runs show a progress bar per stage with the time left; in a log file the same line is written every 30 seconds.

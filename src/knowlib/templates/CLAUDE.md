@@ -111,6 +111,12 @@ When the user asks for a handbook, the agent writes it, so no API key or local w
    A long book among the materials has a digest, listed in the brief beside it. Use the digest to find pages, then read them in the book's Markdown, where each page starts with `<!-- page N (pdf M) -->`. Cite the book and its printed page N, never the digest.
 3. `knowlib handbook --finish --output <target>` checks the draft and writes `handbook.md`, `review.md` and `handbook.pdf`. Resolve what `review.md` lists under "To check", then finish again.
 4. Check any recalculation by running it, not by mental arithmetic. Material ingested with `local_only` stays out of this procedure unless the user agrees for that lecture.
+5. Figures, when the user wants the slides redrawn in the handbook's style: you are the art director and the judge; free models and open-source tools do the drawing.
+   - For each slide the draft shows (`[[slide N]]`), decide: redraw it, turn it into a table, keep the slide (a photo or real artefact), or drop it (the text already says it).
+   - For a redraw, write `<target>/<lecture>/figures/<NN-name>/brief.json`: `slide`, `slide_image` (absolute path), `idea`, `form`, `tool` (graphviz for flows, mermaid for swimlanes, timelines and 2×2 grids, typst for precise layouts and formulas, matplotlib or vegalite for charts from numbers), `labels` (every text and number, copied exactly from the slide), `layout` (one column wide, no wider than about 1.5:1) and `emphasis`. Say which items share one box and what connects to what.
+   - `knowlib figures make <figures folder>` draws each one (a cheap model writes the code, the tool renders it, a script checks the labels and privacy, a vision model compares it with the slide, two revisions).
+   - Look at each `fig.png` beside its slide. Fix small things in `fig.<ext>` yourself and run `knowlib figures render <folder>`. Write `verdict.json` (`accept`, `reject`, `keep-slide`, `table` or `drop`, and a reason naming what you checked).
+   - `knowlib figures sheet <figures folder>` writes `review.html`. The user approves figures before any goes into the draft.
 
 ---
 

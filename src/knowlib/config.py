@@ -97,6 +97,18 @@ DEFAULTS: dict[str, Any] = {
         "tagline": None,                     # a line printed at the end
         "show_times": True,                  # recording times in slide captions and section endings
         "max_tokens": 6000,
+        "figures": {                         # `knowlib figures`: slides redrawn in the handbook's style
+            "writer": {"backend": "chain", "max_tokens": 8000, "reasoning_effort": "low",     # first drawing
+                       "chain": ["google/gemini-3.5-flash-lite", "google/gemini-3.1-flash-lite"]},
+            "reviser": {"backend": "chain", "max_tokens": 8000, "reasoning_effort": "low",    # revisions
+                        "chain": ["google/gemini-3.5-flash", "google/gemini-3.8-flash", "google/gemini-3.5-flash-lite"]},
+            "checker": {"backend": "chain", "max_tokens": 4000, "reasoning_effort": "low",    # compares with the slide
+                        "chain": ["google/gemini-3.5-flash", "google/gemini-3.8-flash", "google/gemini-3.5-flash-lite"]},
+            "revisions": 2,                      # rounds after the label check and the comparison
+            "compile_retries": 3,                # a render error goes back to the model this often
+            "font": "Georgia", "main": "#5a0f1b", "accent": "#3a3a3a", "tint": "#f3eff0", "text": "#1a1a1a",
+            "column_mm": 85,                     # printed width of one column
+        },
     },
     "digest": {                          # book finding aids; overrides of frame_selection for the reading model
         "min_pages": 100,                    # PDFs this long get a digest
