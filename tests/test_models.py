@@ -278,3 +278,47 @@ def test_openrouter_models_in_a_chain_keep_the_vendor_in_the_model_id():
     assert m["key"] == "openrouter/vendor/model-x"
     assert m["section"]["openai_model"] == "vendor/model-x"
     assert m["section"]["provider_routing"] == {"data_collection": "deny"} and not m["trains"]
+
+
+def test_remote_models_get_redacted_prompts_and_no_images_with_personal_information(tmp_path, monkeypatch):
+    from knowlib.providers import base, guard
+    srv = Server([VISION])
+    try:
+        cfg = {"privacy": {"names": ["Jane Roe"]}, "ocr_crosscheck": {}}
+        remote = {"backend": "openai", "base_url": srv.url, "openai_model": "vlm"}
+        monkeypatch.setattr("knowlib.providers.openai_compat.LOCAL_HOSTS", set())   # treat the test server as remote
+        base._CACHE.clear()
+        prov = base.get_vision_provider(remote, cfg)
+        assert isinstance(prov, guard.PrivacyGuard) and prov.backend == "openai" and prov.model == "vlm"
+        assert prov.is_local is False and prov.provenance() == {"backend": "openai", "model": "vlm"}
+        prov.generate([], "Jane Roe wrote to jane@example.org")
+        sent = srv.requests[-1]["messages"][0]["content"][-1]["text"]
+        assert "Jane" not in sent and "@" not in sent and "[a person]" in sent
+        img = tmp_path / "slide.png"
+        from PIL import Image
+        Image.new("RGB", (64, 64), "white").save(img)
+        monkeypatch.setattr(guard, "local_text", lambda p, c: "Contact: someone@example.org")
+        n = len(srv.requests)
+        with pytest.raises(RuntimeError):                 # callers fall back as when a model fails
+            prov.generate([img], "Read the slide.")
+        assert len(srv.requests) == n                     # nothing was sent
+        monkeypatch.setattr(guard, "local_text", lambda p, c: "Revenue 1988 1989 1990 1991 1992")
+        prov._seen.clear()
+        assert prov.generate([img], "Read the slide.") == "ok"
+        # a model on this machine is not wrapped
+        monkeypatch.undo()
+        base._CACHE.clear()
+        assert not isinstance(base.get_vision_provider(remote, cfg), guard.PrivacyGuard)
+    finally:
+        base._CACHE.clear()
+        srv.close()
+
+
+def test_openrouter_data_policy_follows_the_library_privacy_setting():
+    from knowlib.providers.openai_compat import with_data_policy
+    sec = models.parse_spec("openrouter:vendor/m")
+    assert with_data_policy(sec, {})["provider_routing"]["data_collection"] == "deny"
+    allow = with_data_policy(sec, {"privacy": {"models_may_keep_data": True}})
+    assert allow["provider_routing"]["data_collection"] == "allow"
+    plain = {"backend": "openai", "base_url": "https://gpu.example/v1"}
+    assert with_data_policy(plain, {"privacy": {"models_may_keep_data": True}}) == plain

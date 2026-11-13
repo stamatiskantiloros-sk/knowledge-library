@@ -62,8 +62,9 @@ class ChainProvider(VisionProvider):
     backend = "chain"
 
     def __init__(self, section: dict, cfg: dict):
-        from .openai_compat import OpenAICompatProvider
-        self.members = [{**m, "provider": OpenAICompatProvider(m["section"])} for m in member_sections(section, cfg)]
+        from .openai_compat import OpenAICompatProvider, with_data_policy
+        self.members = [{**m, "provider": OpenAICompatProvider(with_data_policy(m["section"], cfg))}
+                        for m in member_sections(section, cfg)]
         if not self.members:
             raise ValueError("backend: chain needs a `chain:` list of <provider>/<model> entries")
         self.model = self.members[0]["provider"].model

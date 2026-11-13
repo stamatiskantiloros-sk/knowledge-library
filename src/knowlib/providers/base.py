@@ -111,8 +111,8 @@ def get_vision_provider(section: dict, cfg: dict) -> VisionProvider:
         if not prov.is_local and cfg.get("local_only"):
             raise LocalOnlyViolation("local_only is set and this role's chain reaches models off this machine")
     elif backend == "openai":
-        from .openai_compat import OpenAICompatProvider
-        prov: VisionProvider = OpenAICompatProvider(section)
+        from .openai_compat import OpenAICompatProvider, with_data_policy
+        prov: VisionProvider = OpenAICompatProvider(with_data_policy(section, cfg))
         if not prov.is_local and cfg.get("local_only"):
             raise LocalOnlyViolation(f"local_only is set and {prov.base_url} is not on this machine")
     elif backend == "mlx-vlm":
@@ -129,6 +129,9 @@ def get_vision_provider(section: dict, cfg: dict) -> VisionProvider:
         prov = MockProvider(section)
     else:
         raise ValueError(f"unknown vision backend: {backend}")
+    if not prov.is_local and (cfg.get("privacy") or {}).get("check_remote", True):
+        from .guard import PrivacyGuard
+        prov = PrivacyGuard(prov, cfg)
     _CACHE[key] = prov
     return prov
 

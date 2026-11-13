@@ -185,6 +185,11 @@ DEFAULTS: dict[str, Any] = {
                 # Fast, 1M context, text only. As a reviewer it caught a dropped hedge but missed a dropped
                 # scope ("in general efficient"): use it for leads, not verdicts.
                 "baidu/ernie-5.5-flash-preview:free": {"rpm": 20, "rpd": 50, "context": 1024000},
+                # These two are hosted only where prompts may be kept: they need privacy.models_may_keep_data.
+                # The VL model read the same 8 slides with every number right, 3x faster than dots, but
+                # slipped on two words (a name, a logo). Ultra, as a reviewer, caught the dropped hedge only.
+                "nvidia/nemotron-3.5-super-vl:free": {"rpm": 20, "rpd": 50, "context": 1000000},
+                "nvidia/nemotron-3-ultra-550b-a55b:free": {"rpm": 20, "rpd": 50, "context": 1000000},
             },
         },
         "nvidia": {
@@ -200,6 +205,16 @@ DEFAULTS: dict[str, Any] = {
                 "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": {"rpm": 40, "context": 128000},
             },
         },
+    },
+    "privacy": {
+        # Names to keep off every model outside this machine (also settable per lecture in session.yaml).
+        "names": [],
+        # Every prompt to a remote model has emails, phone numbers and these names replaced, and every
+        # image is read by local OCR first; one showing personal information is not sent.
+        "check_remote": True,
+        # With the check above, a library may allow hosts that store or train on what they are sent
+        # (OpenRouter's data_collection: allow). local_only material never leaves the machine either way.
+        "models_may_keep_data": False,
     },
     "ocr_crosscheck": {
         "backends": ["apple-vision"],        # apple-vision | tesseract ; add tesseract as a third opinion

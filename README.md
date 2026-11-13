@@ -31,7 +31,7 @@ Scripts do the mechanical work: conversion, extraction, alignment, deduplication
 6. **Doubt stays visible.** Flags, "To check" lists and correction logs, never a quiet fix.
 7. **Provenance on everything.** Each source records the tool and model behind each stage, so it can be redone when something better arrives.
 8. **Everything resumes.** Expensive stages are cached, so an interrupted run continues where it stopped.
-9. **Privacy is enforced in code.** `local_only` blocks every route off the machine. Personal information is removed from anything sent out and from everything written.
+9. **Privacy is enforced in code.** `local_only` blocks every route off the machine. Before any prompt goes to a model off the machine, emails, phone numbers and listed names are replaced; before any image goes, local OCR reads it, and one showing personal information stays local. Personal information is also removed from everything written. Only with that check in place may a library allow hosts that keep or train on data (`privacy.models_may_keep_data`).
 
 ## Install
 
@@ -129,7 +129,7 @@ knowlib models -L DIR --check                            # served, takes images,
 A provider spec is one of:
 - `server:<url>|<model>[|<env var with the key>]`, any OpenAI-compatible server;
 - `lmstudio:<model>`, a local server that knowlib loads and unloads;
-- `openrouter:<vendor>/<model>`, a model on OpenRouter (key in `OPENROUTER_API_KEY` or `~/.openrouter_key`). Requests go only to hosts that neither store nor train on prompts, and fail when the model has none;
+- `openrouter:<vendor>/<model>`, a model on OpenRouter (key in `OPENROUTER_API_KEY` or `~/.openrouter_key`). Requests go only to hosts that neither store nor train on prompts, and fail when the model has none, unless the library sets `privacy.models_may_keep_data: true`;
 - `chain:<provider>/<model>,...`, API models tried in order within their quotas (`openrouter/<vendor>/<model>` works here too);
 - `session:<model>`, a subagent of the agent session;
 - `default`.

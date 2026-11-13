@@ -27,6 +27,17 @@ def _key_file(section: dict) -> str | None:
     return None
 
 
+def with_data_policy(section: dict, cfg: dict) -> dict:
+    """The section with OpenRouter's data_collection preference set from the library's privacy policy:
+    "deny" (hosts that neither store nor train on prompts) unless `privacy.models_may_keep_data` is
+    true, for a library whose personal information is removed on this machine before anything is sent."""
+    routing = section.get("provider_routing")
+    if not isinstance(routing, dict) or "data_collection" not in routing:
+        return section
+    allow = bool((cfg.get("privacy") or {}).get("models_may_keep_data"))
+    return {**section, "provider_routing": {**routing, "data_collection": "allow" if allow else "deny"}}
+
+
 class NotEnoughMemory(RuntimeError):
     """A model does not fit in the memory the system can hand out. Callers that fall back to another
     model on a RuntimeError let this one through, so the run stops and says why."""
