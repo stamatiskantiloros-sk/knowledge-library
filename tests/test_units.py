@@ -708,3 +708,17 @@ def test_the_signature_goes_once_in_the_last_pages_corner(tmp_path):
         sign = [w for w in out[1].get_text("words") if "Maria" in w[4]][-1]
         num = [w for w in out[1].get_text("words") if w[4] == "2"][0]
         assert sign[2] < num[0] and abs(sign[3] - num[3]) < 3 and sign[1] > 790   # left of the number, same line
+def test_blank_last_pages_with_only_a_page_number_are_dropped(tmp_path):
+    import pymupdf
+    from knowlib.handbook.maker import drop_blank_last_pages
+    doc = pymupdf.open()
+    for n, body in ((1, "Text"), (2, "More text"), (3, ""), (4, "")):
+        page = doc.new_page()
+        if body:
+            page.insert_text((72, 72), body)
+        page.insert_text((500, 800), str(n))
+    doc.save(tmp_path / "h.pdf")
+    assert drop_blank_last_pages(tmp_path / "h.pdf") == 2
+    with pymupdf.open(tmp_path / "h.pdf") as d:
+        assert len(d) == 2 and "More text" in d[-1].get_text()
+    assert drop_blank_last_pages(tmp_path / "h.pdf") == 0                     # nothing to drop: left as it is

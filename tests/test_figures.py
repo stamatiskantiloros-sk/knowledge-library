@@ -342,3 +342,32 @@ def test_privacy_check_reads_the_png_beside_a_placed_svg(tmp_path, monkeypatch):
     monkeypatch.setattr("knowlib.media.ocr.apple_vision", lambda path, oc: read.append(path.name) or "ab@example.org")
     got = maker.personal_information(tmp_path, {})
     assert read == ["fig_001.png"] and any("fig_001.svg shows personal information" in g for g in got)
+
+
+def test_figure_words_reads_lines_and_places_them_as_shares_of_the_figure(tmp_path):
+    import pymupdf
+    from knowlib.handbook.maker import figure_words
+    doc = pymupdf.open()
+    page = doc.new_page(width=200, height=100)
+    page.insert_text((50, 30), "Managers", fontsize=10)
+    doc.save(tmp_path / "fig.pdf")
+    words = figure_words(tmp_path / "fig.pdf")
+    assert [w["t"] for w in words] == ["Managers"]
+    w = words[0]
+    assert 24 < w["x"] < 26 and 15 < w["y"] < 30 and w["s"] == 10.0                    # its size in pt
+
+
+def test_svg_figures_get_a_transparent_text_layer_for_search(tmp_path):
+    import json as _json
+    from knowlib.handbook.maker import with_text_layers
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "fig_015.text.json").write_text(_json.dumps([{"t": "A & B", "x": 10, "y": 20, "w": 5, "s": 2}]))
+    page = ('<figure>\n<img src="assets/fig_015.svg" class="kl-fig wide" style="width:116.4mm"\nalt="Slide 15" />\n'
+            '<figcaption>Slide 15</figcaption></figure><img src="assets/slide_004.png" alt="x" />'
+            '<img src="assets/fig_030.svg" class="kl-fig" style="width:65.4mm" alt="y" />')
+    got = with_text_layers(page, tmp_path)
+    assert 'class="kl-fig-box"' in got and "width:116.4mm" in got and "container-type" not in got
+    assert 'class="kl-fig wide"' in got                                           # keeps the classes the layout uses
+    assert "color:transparent" in got and ">A &amp; B</span>" in got and "left:10%;top:20%;font-size:2pt" in got
+    assert got.count("kl-fig-box") == 1                                            # no words file: left as it is
+    assert '<img src="assets/slide_004.png" alt="x" />' in got

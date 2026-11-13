@@ -10,6 +10,7 @@ check flagged.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
 import re
@@ -456,6 +457,47 @@ def _figure_mm(d: Path) -> float | None:
         return doc[0].rect.width * 25.4 / 72
 
 
+def figure_words(pdf: Path) -> list[dict]:
+    """Each line of text in a figure's PDF with its box as a share of the figure (x, y, w in %) and its size
+    in pt (Typst draws at true size, and the figure is placed at that size). Typst's PDF has real text; its
+    SVG has only shapes."""
+    import pymupdf
+    out = []
+    with pymupdf.open(pdf) as doc:
+        page = doc[0]
+        w, h = page.rect.width, page.rect.height
+        for block in page.get_text("dict")["blocks"]:
+            for line in block.get("lines", []):
+                for span in line["spans"]:
+                    if span["text"].strip():
+                        x0, y0, x1, _ = span["bbox"]
+                        out.append({"t": span["text"], "x": round(x0 / w * 100, 3), "y": round(y0 / h * 100, 3),
+                                    "w": round((x1 - x0) / w * 100, 3), "s": round(span["size"], 2)})
+    return out
+
+
+def with_text_layers(page: str, out: Path) -> str:
+    """Wrap each placed SVG figure that has a `.text.json` beside it with its words as transparent text at
+    the same places: the figure stays vector and looks the same, and the PDF can be searched and copied."""
+    def wrap(m: re.Match) -> str:
+        tag, stem = m[0], m[1]
+        words = out / "assets" / f"{stem}.text.json"
+        if not words.exists():
+            return tag
+        width = re.search(r'style="[^"]*width:\s*([\d.]+mm)', tag)
+        img = re.sub(r'\sstyle="[^"]*"', "", tag).replace("<img", '<img style="width:100%;display:block;margin:0"', 1)
+        spans = "".join(
+            f'<span style="position:absolute;left:{w["x"]}%;top:{w["y"]}%;font-size:{w["s"]}pt;'
+            f'white-space:pre">{html.escape(w["t"])}</span>'
+            for w in json.loads(words.read_text(encoding="utf-8")))
+        # no container query units here: container-type changes how Chrome balances the columns
+        box = f'position:relative;margin:0 auto;max-width:100%;width:{width[1] if width else "100%"}'
+        layer = ('<span class="kl-fig-text" aria-hidden="true" style="position:absolute;inset:0;overflow:hidden;color:transparent;'
+                 'line-height:1;font-family:Georgia,serif">' + spans + "</span>")
+        return f'<div class="kl-fig-box" style="{box}">{img}{layer}</div>'
+    return re.sub(r'<img\s[^>]*?src="assets/(fig_\d+)\.svg"[^>]*?/?>', wrap, page, flags=re.S)
+
+
 def _place_figures(text: str, part: list[Slide], lecture: Lecture, out: Path, issues: list[str]) -> str:
     """[[slide N]] becomes the slide's image, or what `knowlib figures` made for it and the user approved:
     a redrawn figure at its printed size ("accept"), a table ("table"), or nothing ("drop")."""
@@ -481,6 +523,9 @@ def _place_figures(text: str, part: list[Slide], lecture: Lecture, out: Path, is
                     # vector: sharp at any zoom. Typst's SVG draws text as paths, so it needs no fonts
                     name = f"fig_{s.n:03d}.svg"
                     shutil.copy2(d / "fig.svg", out / "assets" / name)
+                    if (d / "fig.pdf").exists():               # its words, so Ctrl+F finds them in the PDF
+                        (out / "assets" / f"fig_{s.n:03d}.text.json").write_text(
+                            json.dumps(figure_words(d / "fig.pdf"), ensure_ascii=False), encoding="utf-8")
                 attrs = ".kl-fig .wide" if brief.get("width") == "wide" else ".kl-fig"
                 if mm := _figure_mm(d):
                     attrs += f" width={mm:.1f}mm"
@@ -620,6 +665,8 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None, *, tit
     (out / ".after.html").unlink(missing_ok=True)
     (out / ".print.md").unlink(missing_ok=True)
     if r.returncode == 0:
+        page = out / ".print.html"
+        page.write_text(with_text_layers(page.read_text(encoding="utf-8"), out), encoding="utf-8")
         r = subprocess.run([str(CHROME), "--headless", "--disable-gpu", "--no-pdf-header-footer",
                             f"--print-to-pdf={pdf}", (out / ".print.html").as_uri()],
                            capture_output=True, text=True)
@@ -628,6 +675,7 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None, *, tit
     if r.returncode != 0 or not pdf.exists():
         log.warning("pdf export failed: %s", r.stderr.strip()[-300:])
         return None
+    drop_blank_last_pages(pdf)
     import pymupdf
     with pymupdf.open(pdf) as doc:                         # the title readers and file browsers show
         doc.set_metadata({**(doc.metadata or {}), "title": title or "Handbook", "subject": long_date(date)})
@@ -640,6 +688,27 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None, *, tit
         if old != pdf and (old.name == "handbook.pdf" or old.name.startswith(pdf.name.rsplit(" - ", 1)[0])):
             old.unlink()
     return str(pdf)
+
+
+def drop_blank_last_pages(pdf: Path) -> int:
+    """Chrome adds an empty page when two columns end exactly at the foot of the last page. Remove trailing
+    pages that hold nothing but the page number (no other text, no drawings, no images); return how many."""
+    import pymupdf
+    with pymupdf.open(pdf) as doc:
+        n = 0
+        while len(doc) > 1:
+            page = doc[-1]
+            if page.get_text().strip().isdigit() and not page.get_drawings() and not page.get_images():
+                doc.delete_page(-1)
+                n += 1
+            else:
+                break
+        tmp = pdf.with_suffix(".tmp.pdf")
+        if n:
+            doc.save(tmp, garbage=3, deflate=True)
+    if n:
+        tmp.replace(pdf)
+    return n
 
 
 def _select(root: Path, input_dir: Path | None, only: list[str] | None):

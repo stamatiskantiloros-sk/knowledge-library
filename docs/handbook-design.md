@@ -355,7 +355,8 @@ A slide screenshot carries the slide's colours, fonts and decoration into the bo
 | Revise | `handbook.figures.reviser` | Up to `revisions` rounds with the label misses and the checker's issues. |
 | Judge | the agent | Looks at each figure beside its slide; fixes small things by hand (`knowlib figures render`); writes `verdict.json`. |
 | Show | `knowlib figures sheet` | `review.html`: slide, figure, idea and verdict side by side. Nothing enters the draft until the user approves. |
-| Place | `knowlib handbook --finish` | An approved figure replaces the slide at its printed size. Typst figures go in as SVG: vector, so text and lines stay sharp at any zoom (the PNG at 300 ppi looked soft on screen beside the text). Typst's SVG draws text as paths, so no fonts are needed. The PNG is copied beside it for the privacy check's OCR. Figures from the other tools go in as PNG. |
+| Place | `knowlib handbook --finish` | An approved figure replaces the slide at its printed size. Typst figures go in as SVG: vector, so text and lines stay sharp at any zoom (the PNG at 300 ppi looked soft on screen beside the text). Typst's SVG draws text as paths, so no fonts are needed. The PNG is copied beside it for the privacy check's OCR. Figures from the other tools go in as PNG. Because the SVG has no text, the words from the figure's PDF (`fig_NNN.text.json`) are laid over it as transparent text at the same places and sizes, so Ctrl+F finds and highlights them and they can be copied; the figure looks the same. The layer uses pt sizes, not container units: `container-type` changed how Chrome balanced the columns. |
+| Tidy | `knowlib handbook --finish` | Chrome adds an empty page when two columns end exactly at the foot of the last page; trailing pages with only a page number are removed. |
 
 **Choices and findings**
 - **Tool by form.**
