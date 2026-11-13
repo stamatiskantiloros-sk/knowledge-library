@@ -280,7 +280,7 @@ def test_openrouter_models_in_a_chain_keep_the_vendor_in_the_model_id():
     assert m["section"]["provider_routing"] == {"data_collection": "deny"} and not m["trains"]
 
 
-def test_remote_models_get_redacted_prompts_and_no_images_with_personal_information(tmp_path, monkeypatch):
+def test_remote_models_get_redacted_prompts_and_masked_images(tmp_path, monkeypatch):
     from knowlib.providers import base, guard
     srv = Server([VISION])
     try:
@@ -296,15 +296,31 @@ def test_remote_models_get_redacted_prompts_and_no_images_with_personal_informat
         assert "Jane" not in sent and "@" not in sent and "[a person]" in sent
         img = tmp_path / "slide.png"
         from PIL import Image
-        Image.new("RGB", (64, 64), "white").save(img)
-        monkeypatch.setattr(guard, "local_text", lambda p, c: "Contact: someone@example.org")
+        Image.new("RGB", (200, 100), "white").save(img)
+        email_line = ("Contact: someone@example.org", (10, 60, 150, 80))
+        # the original shows an email on one line; the masked copy no longer does
+        monkeypatch.setattr(guard, "local_lines",
+                            lambda p, c: [("Revenue 1988 1989 1990", (10, 10, 150, 30))] +
+                            ([email_line] if p == img else []))
         n = len(srv.requests)
-        with pytest.raises(RuntimeError):                 # callers fall back as when a model fails
-            prov.generate([img], "Read the slide.")
-        assert len(srv.requests) == n                     # nothing was sent
-        monkeypatch.setattr(guard, "local_text", lambda p, c: "Revenue 1988 1989 1990 1991 1992")
-        prov._seen.clear()
         assert prov.generate([img], "Read the slide.") == "ok"
+        assert len(srv.requests) == n + 1
+        masked = prov.sendable(img)
+        assert masked != img
+        with Image.open(masked) as m:
+            assert m.getpixel((80, 70)) == (0, 0, 0) and m.getpixel((80, 20)) == (255, 255, 255)
+        with Image.open(img) as o:
+            assert o.getpixel((80, 70)) == (255, 255, 255)        # the original is untouched
+        # masking that leaves personal information visible: nothing is sent
+        monkeypatch.setattr(guard, "local_lines", lambda p, c: [email_line])
+        prov._sendable.clear()
+        with pytest.raises(RuntimeError):                       # callers fall back as when a model fails
+            prov.generate([img], "Read the slide.")
+        assert len(srv.requests) == n + 1
+        # an image with nothing personal goes as it is
+        monkeypatch.setattr(guard, "local_lines", lambda p, c: [("Revenue 1988 1989 1990", (10, 10, 150, 30))])
+        prov._sendable.clear()
+        assert prov.sendable(img) == img
         # a model on this machine is not wrapped
         monkeypatch.undo()
         base._CACHE.clear()
