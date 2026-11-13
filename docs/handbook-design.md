@@ -340,3 +340,16 @@ A slide screenshot carries the slide's colours, fonts and decoration into the bo
 - **Fixing render errors.** Repeated compile-fix rounds help less each time (TikZilla, 2026: about 49%, 55% and 59% of failing figures fixed after one, two and three rounds), hence three retries.
 - **Checking the picture.** Chart-to-code studies found that code which looks right can still draw the wrong chart, so the check is on the rendered image as well as the text.
 - **Width.** A figure sits one column wide in the two-column layout, so the brief asks for no wider than about 1.5:1. Long flows read better top to bottom.
+
+## 18. The look: one theme for the page and the figures
+
+Choosing a look by describing it in words was slow: the user could not see a palette, a typeface and a figure style together until a whole handbook was rebuilt. `knowlib style` opens a picker page instead, and what is chosen there is stored once and used everywhere.
+
+- **The picker** (`templates/style-picker.html`) is one self-contained page: ready-made looks, palettes in groups, three colour inputs, body and heading typefaces, section-heading and table-header styles, and the figure boxes (corners, fill, line weight). A sample page with a heading, text, a figure, a table and a chart updates as the user chooses. It opens with the library's current theme selected.
+- **Saving.** The page shows a `knowlib style --apply '...'` command. It writes `handbook.theme` under `handbook:` in the library's config by editing only those lines, so comments and every other setting stay as they were; it keeps a backup and refuses if the file would not read back as intended. Values are checked (colours are hex, names have no quotes or braces) because they go into CSS and Typst.
+- **Where the theme goes.**
+  - The PDF: rules added after `handbook.style_file`, so the theme wins (colours, typefaces, heading and table variants).
+  - Figures a model draws: `handbook.figures` takes its colours and typeface from the theme.
+  - Figures specified by hand: `figures/style.typ` is written from the theme (`templates/figure-style.typ`) each time a Typst figure is rendered. A style file someone wrote by hand is left alone.
+- **Why the figures follow.** Hand-specified figures use the style's helpers and colour names, never fixed values. Switching Lecture 1 from its hand-written style file to the generated one changed no pixel in the four figures compared.
+- **Limit.** A box a figure draws itself, without the `node` helper, keeps its own corner radius unless it uses the style's `corner`.

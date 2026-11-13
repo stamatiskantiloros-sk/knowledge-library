@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Handbook style</title>
+<style>
+:root { --bg: #f6f5f3; --card: #ffffff; --text: #1c1b1a; --muted: #6b6864; --line: #dcd9d4; --focus: #2f5fd0; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1b1a19; --card: #262524; --text: #f1efec; --muted: #a8a49e; --line: #3d3b38; --focus: #8fb0ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px 16px 40px; background: var(--bg); color: var(--text);
+       font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+.lead { color: var(--muted); margin: 0 0 18px; max-width: 70ch; }
+.wrap { max-width: 1240px; margin: 0 auto; }
+.cols { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.right { position: sticky; top: 12px; }
+@media (max-width: 900px) { .right { position: static; } }
+h2 { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+h2:first-child { margin-top: 0; }
+.group { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 7px;
+         padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.chip[aria-pressed=true] { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(128, 128, 128, .35); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+select { width: 100%; font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
+         border-radius: 7px; padding: 5px 6px; }
+.roles { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.role { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.role[aria-pressed=true] { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.role .sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(128, 128, 128, .4); }
+.role code { font: 11.5px ui-monospace, Menlo, monospace; color: var(--muted); }
+.pad { display: grid; grid-template-columns: 74px repeat(10, 22px); gap: 3px; align-items: center; }
+.pad .fam { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pad button, .used button { width: 22px; height: 22px; padding: 0; border-radius: 4px; border: 1px solid rgba(128, 128, 128, .3); }
+.pad button[aria-pressed=true], .used button[aria-pressed=true] { outline: 2px solid var(--focus); outline-offset: 1px; }
+.used { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 10px; }
+.exact { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
+.exact input[type=text] { width: 92px; font: 12.5px ui-monospace, Menlo, monospace; color: var(--text); background: var(--card);
+                          border: 1px solid var(--line); border-radius: 7px; padding: 5px 7px; }
+.exact input[type=color] { width: 34px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+#warn { color: #b3261e; font-size: 12.5px; margin: 6px 0 0; min-height: 1em; }
+@media (prefers-color-scheme: dark) { #warn { color: #ff8a80; } }
+#cmd { width: 100%; min-height: 92px; margin: 8px 0; padding: 8px; font: 12px/1.4 ui-monospace, Menlo, monospace;
+       color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; resize: vertical; }
+.primary { background: var(--text); color: var(--card); border-color: var(--text); }
+#copied { color: var(--muted); margin-left: 8px; font-size: 12.5px; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+
+/* the sample page: paper, always light */
+#pg { --m: #5a0f1b; --a: #3a3a3a; --t: #f3eff0; --bf: Georgia, serif; --hf: Georgia, serif; --lw: 1.1; --bxf: #f3eff0;
+      --bxs: #5a0f1b; background: #fff; color: #1a1a1a; padding: 26px 28px; border-radius: 3px;
+      font-family: var(--bf); font-size: 12.5px; line-height: 1.42; }
+#pg .ti { font-family: var(--hf); color: var(--m); font-size: 22px; text-align: center; margin: 0; }
+#pg .by { font-style: italic; color: var(--m); text-align: center; font-size: 11.5px; margin: 3px 0 16px; }
+#pg .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+@media (max-width: 560px) { #pg .two { grid-template-columns: minmax(0, 1fr); } }
+#pg .hd { font-family: var(--hf); font-weight: 700; font-size: 14px; margin: 0 0 6px; padding-bottom: 2px; }
+#pg .num { color: var(--m); margin-right: 6px; } #pg .ttl { color: #111; }
+#pg[data-h=all] .ttl { color: var(--m); }
+#pg[data-h=rule] .hd { border-bottom: 1px solid var(--m); }
+#pg[data-h=block] .num { background: var(--m); color: #fff; padding: 0 6px; }
+#pg p { margin: 0 0 7px; text-align: justify; hyphens: auto; }
+#pg ul { margin: 0 0 9px; padding-left: 16px; } #pg li::marker { color: var(--m); } #pg b { color: var(--m); }
+#pg table { border-collapse: collapse; width: 100%; font-size: 11.5px; margin: 0 0 12px; }
+#pg th { text-align: left; padding: 4px 7px; background: var(--m); color: #fff; }
+#pg[data-t=accent] th { background: var(--a); }
+#pg[data-t=line] th { background: none; color: var(--m); border-bottom: 1.5px solid var(--m); }
+#pg[data-t=tint] th { background: var(--t); color: var(--m); border-bottom: 1px solid var(--m); }
+#pg td { padding: 4px 7px; vertical-align: top; } #pg tr:nth-child(odd) td { background: var(--t); }
+#pg tr:last-child td { border-bottom: 1px solid var(--m); }
+#pg .src { font-style: italic; font-size: 11px; color: var(--a); text-align: right; margin: 2px 0 0; }
+#pg svg { display: block; width: 100%; height: auto; margin: 4px 0 8px; }
+#pg svg text { font-family: var(--bf); font-size: 11px; fill: #1a1a1a; }
+#pg .bx { fill: var(--bxf); stroke: var(--bxs); stroke-width: var(--lw); }
+#pg .key { fill: var(--m); } #pg .dk { fill: var(--a); } #pg svg .w { fill: #fff; }
+#pg .ln { stroke: var(--a); stroke-width: var(--lw); fill: none; } #pg .ah { fill: var(--a); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Handbook style</h1>
+<p class="lead">Pick a look for the handbook and its figures, or build your own from the colour pads. The sample page updates as you choose. When you are happy, copy the command at the bottom and run it (or give it to your agent): it saves the look in the library's settings.</p>
+<div class="cols">
+<div class="panel">
+  <h2>Ready-made looks</h2>
+  <div class="row" id="looks"></div>
+  <h2>Palettes</h2>
+  <div id="pals"></div>
+  <h2>Your own colours</h2>
+  <p class="group">Choose which colour to set, then click a swatch.</p>
+  <div class="roles" id="roles">
+    <button type="button" class="role" data-role="main" aria-pressed="true"><span class="sw"></span>Main <code></code></button>
+    <button type="button" class="role" data-role="accent" aria-pressed="false"><span class="sw"></span>Accent <code></code></button>
+    <button type="button" class="role" data-role="tint" aria-pressed="false"><span class="sw"></span>Tint <code></code></button>
+  </div>
+  <p class="group">Colours from the palettes</p>
+  <div class="used" id="used"></div>
+  <p class="group">All colours, darkest to lightest</p>
+  <div class="pad" id="pad"></div>
+  <div class="exact">
+    <label for="hex" style="margin:0">Exact colour</label>
+    <input type="text" id="hex" spellcheck="false" maxlength="7" aria-label="Hex colour for the chosen role">
+    <input type="color" id="wheel" aria-label="Colour wheel for the chosen role">
+  </div>
+  <p id="warn" role="status"></p>
+  <h2>Type and details</h2>
+  <div class="grid">
+    <div><label for="s-bf">Body typeface</label><select id="s-bf"></select></div>
+    <div><label for="s-hf">Heading typeface</label><select id="s-hf"></select></div>
+    <div><label for="s-h">Section headings</label><select id="s-h"><option value="num">Coloured number</option><option value="all">All in main colour</option><option value="rule">Rule under heading</option><option value="block">Number in a block</option></select></div>
+    <div><label for="s-t">Table header</label><select id="s-t"><option value="main">Solid main colour</option><option value="accent">Solid accent</option><option value="line">Underline only</option><option value="tint">Tint</option></select></div>
+    <div><label for="s-sh">Figure boxes</label><select id="s-sh"><option value="rounded">Rounded</option><option value="square">Square</option><option value="pill">Pill</option></select></div>
+    <div><label for="s-fl">Box fill</label><select id="s-fl"><option value="tintline">Tint with outline</option><option value="outline">Outline only</option><option value="solid">Solid tint, no outline</option></select></div>
+    <div><label for="s-lw">Line weight</label><select id="s-lw"><option value="fine">Fine</option><option value="regular">Regular</option><option value="bold">Bold</option></select></div>
+  </div>
+  <h2>Save this look</h2>
+  <textarea id="cmd" readonly aria-label="Command that saves this look"></textarea>
+  <button class="primary" id="copy">Copy command</button><span id="copied" role="status"></span>
+  <p class="hint">Typefaces must be installed on the machine that builds the PDF. Figures drawn before the change are redrawn with <code>knowlib figures render</code>.</p>
+</div>
+<div class="right">
+<div id="pg" data-h="num" data-t="main">
+  <p class="ti">Lecture 1: Introduction to the subject</p>
+  <p class="by">Lecture notes · sample page</p>
+  <div class="two">
+  <div>
+    <div class="hd"><span class="num">13.</span><span class="ttl">Bottlenecks</span></div>
+    <p>A bottleneck limits the capacity of a process, like a door when everyone must leave a room at once.</p>
+    <svg viewBox="0 0 300 118" role="img" aria-label="Sample figure: three suppliers feed assembly and output; one supplier is the bottleneck">
+      <rect class="bx" data-r="30" x="2" y="4" width="88" height="30"/><text x="46" y="16" text-anchor="middle">Head</text><text x="46" y="29" text-anchor="middle" font-weight="700">400 / day</text>
+      <rect class="key" data-r="30" x="2" y="44" width="88" height="30"/><text class="w" x="46" y="56" text-anchor="middle">Shaft</text><text class="w" x="46" y="69" text-anchor="middle" font-weight="700">360 / day</text>
+      <rect class="bx" data-r="30" x="2" y="84" width="88" height="30"/><text x="46" y="96" text-anchor="middle">Grip</text><text x="46" y="109" text-anchor="middle" font-weight="700">500 / day</text>
+      <path class="ln" d="M90 19H102V99H90M90 59H112"/><path class="ah" d="M112 55l8 4-8 4z"/>
+      <rect class="bx" data-r="38" x="122" y="40" width="80" height="38"/><text x="162" y="56" text-anchor="middle">Assemble</text><text x="162" y="70" text-anchor="middle" font-weight="700">400 / day</text>
+      <path class="ln" d="M202 59H212"/><path class="ah" d="M212 55l8 4-8 4z"/>
+      <rect class="dk" data-r="38" x="222" y="40" width="76" height="38"/><text class="w" x="260" y="56" text-anchor="middle">Output</text><text class="w" x="260" y="70" text-anchor="middle" font-weight="700">360 / day</text>
+    </svg>
+    <ul><li><b>Shaft manufacturing</b>, the new bottleneck, may be doing things it should not.</li><li>If demand is no more than 360 a day, nothing needs doing.</li></ul>
+    <p class="src">Slides 44–46</p>
+  </div>
+  <div>
+    <table><tr><th>Good flow</th><th>Poor flow</th></tr><tr><td>Balanced lead times</td><td>Unpredictable lead times</td></tr><tr><td>No unnecessary queues</td><td>Work piles up between teams</td></tr><tr><td>Minimal rework</td><td>Frequent rechecking</td></tr></table>
+    <div class="hd"><span class="num">15.</span><span class="ttl">Productivity across countries</span></div>
+    <svg viewBox="0 0 300 98" role="img" aria-label="Sample chart: five horizontal bars, one highlighted">
+      <text x="62" y="14" text-anchor="end">Ireland</text><rect class="dk" x="68" y="4" width="197" height="13"/><text x="270" y="14">109.5</text>
+      <text x="62" y="33" text-anchor="end">Germany</text><rect class="dk" x="68" y="23" width="134" height="13"/><text x="207" y="33">74.2</text>
+      <text x="62" y="52" text-anchor="end">Spain</text><rect class="dk" x="68" y="42" width="105" height="13"/><text x="178" y="52">58.1</text>
+      <text x="62" y="71" text-anchor="end">Greece</text><rect class="key" x="68" y="61" width="67" height="13"/><text x="140" y="71">37.2</text>
+      <text x="62" y="90" text-anchor="end">Mexico</text><rect class="dk" x="68" y="80" width="40" height="13"/><text x="113" y="90">22.2</text>
+    </svg>
+    <p class="src">Slide 52</p>
+  </div>
+  </div>
+</div>
+</div>
+</div>
+</div>
+<script>
+(function () {
+  var CURRENT = /*KNOWLIB_THEME*/null;
+  var LIBRARY = /*KNOWLIB_LIBRARY*/"";
+  var P = [
+    ["Garnet and charcoal", "#5a0f1b", "#3a3a3a", "#f3eff0", "Garnet family"],
+    ["Oxblood and ink", "#4a0a12", "#111111", "#f2eded", "Garnet family"],
+    ["Bordeaux and stone", "#6d1a2a", "#6b645c", "#f4f1ec", "Garnet family"],
+    ["Garnet and slate blue", "#5a0f1b", "#2f3e4e", "#eef1f3", "Garnet family"],
+    ["Crimson noir", "#b0122a", "#0d0d0d", "#f4f4f4", "Edgy"],
+    ["Ink and vermilion", "#111111", "#d7301f", "#f3f3f3", "Edgy"],
+    ["Monochrome ink", "#111111", "#555555", "#f1f1f1", "Edgy"],
+    ["Black cherry and gold", "#3d0c14", "#a8894a", "#f6f1e7", "Classy"],
+    ["Aubergine and graphite", "#3f1a3d", "#3a3a3a", "#f3eff3", "Classy"],
+    ["Midnight and garnet", "#14213d", "#5a0f1b", "#eef0f5", "Classy"],
+    ["Forest and brass", "#1f3d2f", "#9a7b3c", "#f1f4ef", "Further afield"],
+    ["Petrol and copper", "#0f4c5c", "#b5651d", "#eef4f5", "Further afield"],
+    ["Espresso and terracotta", "#3b2418", "#b4532a", "#f6f0ea", "Further afield"],
+    ["Deep sea and coral", "#12355b", "#d1495b", "#eef2f6", "Further afield"]];
+  var BF = ["Georgia", "Palatino", "Baskerville", "Iowan Old Style", "Charter", "Hoefler Text", "Avenir Next", "Helvetica Neue", "Optima"];
+  var HF = ["Same as body", "Didot", "Baskerville", "Avenir Next", "Futura", "Optima", "Helvetica Neue", "Gill Sans"];
+  var L = [
+    ["Garnet classic", 0, "Georgia", "Same as body", "num", "main", "rounded", "tintline", "regular"],
+    ["Noir edition", 5, "Georgia", "Didot", "block", "line", "square", "outline", "fine"],
+    ["Atelier", 7, "Baskerville", "Didot", "rule", "main", "rounded", "tintline", "fine"],
+    ["Swiss", 4, "Helvetica Neue", "Helvetica Neue", "block", "accent", "square", "solid", "bold"],
+    ["Old library", 10, "Iowan Old Style", "Same as body", "rule", "tint", "rounded", "tintline", "regular"],
+    ["Harbour", 11, "Charter", "Avenir Next", "all", "main", "pill", "solid", "regular"],
+    ["Midnight", 9, "Palatino", "Optima", "num", "main", "rounded", "outline", "regular"],
+    ["Terracotta studio", 12, "Charter", "Futura", "rule", "tint", "square", "tintline", "regular"]];
+  var LW = { fine: 0.7, regular: 1.1, bold: 1.8 };
+  var col = { main: P[0][1], accent: P[0][2], tint: P[0][3] }, name = P[0][0], look = -1, pg = document.getElementById("pg");
+  function el(i) { return document.getElementById(i); }
+  function fill(sel, list, extra) {
+    (extra && list.indexOf(extra) < 0 ? list.concat([extra]) : list).forEach(function (x) {
+      var o = document.createElement("option"); o.value = x; o.textContent = x; sel.appendChild(o);
+    });
+  }
+  fill(el("s-bf"), BF, CURRENT && CURRENT.body_font);
+  fill(el("s-hf"), HF, CURRENT && CURRENT.heading_font);
+  function chip(label, cols, fn) {
+    var b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.setAttribute("aria-pressed", "false");
+    cols.forEach(function (c) { var d = document.createElement("span"); d.className = "dot"; d.style.background = c; b.appendChild(d); });
+    b.appendChild(document.createTextNode(label)); b.addEventListener("click", fn); return b;
+  }
+  function usePalette(i) { name = P[i][0]; col = { main: P[i][1], accent: P[i][2], tint: P[i][3] }; }
+  var pc = [], lc = [], groups = {};
+  P.forEach(function (p, i) {
+    if (!groups[p[4]]) {
+      var g = document.createElement("p"); g.className = "group"; g.textContent = p[4];
+      var r = document.createElement("div"); r.className = "row";
+      el("pals").appendChild(g); el("pals").appendChild(r); groups[p[4]] = r;
+    }
+    var c = chip(p[0], [p[1], p[2], p[3]], function () { usePalette(i); look = -1; draw(); });
+    pc.push(c); groups[p[4]].appendChild(c);
+  });
+  L.forEach(function (k, i) {
+    var c = chip(k[0], [P[k[1]][1], P[k[1]][2]], function () {
+      look = i; usePalette(k[1]);
+      el("s-bf").value = k[2]; el("s-hf").value = k[3]; el("s-h").value = k[4]; el("s-t").value = k[5];
+      el("s-sh").value = k[6]; el("s-fl").value = k[7]; el("s-lw").value = k[8]; draw();
+    });
+    lc.push(c); el("looks").appendChild(c);
+  });
+  var FAM = [["Garnet", 350, 72], ["Rose", 338, 52], ["Plum", 305, 32], ["Violet", 262, 38], ["Navy", 220, 55],
+    ["Slate", 210, 18], ["Petrol", 192, 58], ["Forest", 150, 34], ["Olive", 75, 30], ["Brass", 42, 48],
+    ["Terracotta", 18, 58], ["Espresso", 24, 32], ["Warm grey", 30, 7], ["Grey", 0, 0]];
+  var LIGHT = [10, 16, 23, 31, 41, 53, 67, 81, 91, 96];
+  var role = "main", swatches = [];
+  function hex(h, s, l) {
+    s /= 100; l /= 100;
+    var k = function (n) { return (n + h / 30) % 12; }, a = s * Math.min(l, 1 - l);
+    var f = function (n) { return l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)); };
+    return "#" + [f(0), f(8), f(4)].map(function (x) { return ("0" + Math.round(x * 255).toString(16)).slice(-2); }).join("");
+  }
+  function lum(c) {
+    var v = [1, 3, 5].map(function (i) { var x = parseInt(c.substr(i, 2), 16) / 255;
+      return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  }
+  function contrast(a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  function swatch(c, parent) {
+    var b = document.createElement("button"); b.type = "button"; b.style.background = c; b.title = c;
+    b.setAttribute("aria-label", c); b.setAttribute("aria-pressed", "false"); b.setAttribute("data-c", c);
+    b.addEventListener("click", function () { setColour(c); }); parent.appendChild(b); swatches.push(b);
+  }
+  function setColour(c) { col[role] = c.toLowerCase(); name = "Custom"; look = -1; draw(); }
+  FAM.forEach(function (f) {
+    var t = document.createElement("span"); t.className = "fam"; t.textContent = f[0]; el("pad").appendChild(t);
+    LIGHT.forEach(function (l) { swatch(hex(f[1], f[2], l), el("pad")); });
+  });
+  var seen = {};
+  P.forEach(function (p) { [p[1], p[2], p[3]].forEach(function (c) { if (!seen[c]) { seen[c] = 1; swatch(c, el("used")); } }); });
+  function drawPads() {
+    Array.prototype.forEach.call(el("roles").querySelectorAll(".role"), function (b) {
+      var r = b.getAttribute("data-role");
+      b.setAttribute("aria-pressed", r === role ? "true" : "false");
+      b.querySelector(".sw").style.background = col[r]; b.querySelector("code").textContent = col[r];
+    });
+    swatches.forEach(function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-c") === col[role] ? "true" : "false"); });
+    el("hex").value = col[role]; el("wheel").value = col[role];
+    var w = [];
+    if (contrast(col.main, "#ffffff") < 4.5) { w.push("white text on the main colour is hard to read"); }
+    if (contrast(col.accent, "#ffffff") < 4.5) { w.push("white text on the accent is hard to read"); }
+    if (contrast(col.tint, "#1a1a1a") < 7) { w.push("the tint is too dark behind body text"); }
+    el("warn").textContent = w.length ? "Check: " + w.join("; ") + "." : "";
+  }
+  function ff(n) { return '"' + n + '", Georgia, serif'; }
+  function q(s) { return '"' + s + '"'; }
+  function draw() {
+    var bf = el("s-bf").value, hf = el("s-hf").value, fl = el("s-fl").value, sh = el("s-sh").value, st = pg.style;
+    st.setProperty("--m", col.main); st.setProperty("--a", col.accent); st.setProperty("--t", col.tint);
+    st.setProperty("--bf", ff(bf)); st.setProperty("--hf", ff(hf === "Same as body" ? bf : hf));
+    st.setProperty("--lw", LW[el("s-lw").value]);
+    st.setProperty("--bxf", fl === "outline" ? "#ffffff" : col.tint);
+    st.setProperty("--bxs", fl === "solid" ? "none" : (fl === "outline" ? col.accent : col.main));
+    pg.setAttribute("data-h", el("s-h").value); pg.setAttribute("data-t", el("s-t").value);
+    Array.prototype.forEach.call(pg.querySelectorAll("[data-r]"), function (r) {
+      r.setAttribute("rx", sh === "square" ? 0 : sh === "pill" ? Number(r.getAttribute("data-r")) / 2 : 4);
+    });
+    drawPads();
+    pc.forEach(function (c, i) { c.setAttribute("aria-pressed", P[i][0] === name ? "true" : "false"); });
+    lc.forEach(function (c, i) { c.setAttribute("aria-pressed", i === look ? "true" : "false"); });
+    var s = "palette=" + q(name) + " main=" + col.main + " accent=" + col.accent + " tint=" + col.tint +
+      " body_font=" + q(bf) + (hf === "Same as body" ? "" : " heading_font=" + q(hf)) +
+      " headings=" + el("s-h").value + " table_header=" + el("s-t").value + " boxes=" + sh +
+      " box_fill=" + fl + " line_weight=" + el("s-lw").value;
+    el("cmd").value = "knowlib style" + (LIBRARY ? " -L " + q(LIBRARY) : "") + " --apply '" + s + "'";
+    el("copied").textContent = "";
+  }
+  ["s-bf", "s-hf", "s-h", "s-t", "s-sh", "s-fl", "s-lw"].forEach(function (i) {
+    el(i).addEventListener("change", function () { look = -1; draw(); });
+  });
+  Array.prototype.forEach.call(el("roles").querySelectorAll(".role"), function (b) {
+    b.addEventListener("click", function () { role = b.getAttribute("data-role"); drawPads(); });
+  });
+  el("hex").addEventListener("change", function () {
+    var v = el("hex").value.trim().toLowerCase(); if (v.charAt(0) !== "#") { v = "#" + v; }
+    if (/^#[0-9a-f]{6}$/.test(v)) { setColour(v); } else { el("warn").textContent = "Use a colour like #5a0f1b"; }
+  });
+  el("wheel").addEventListener("input", function () { setColour(el("wheel").value); });
+  el("copy").addEventListener("click", function () {
+    var t = el("cmd"), done = function () { el("copied").textContent = "Copied"; };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t.value).then(done, function () { t.select(); document.execCommand("copy"); done(); });
+    } else { t.select(); document.execCommand("copy"); done(); }
+  });
+  if (CURRENT) {
+    col = { main: CURRENT.main, accent: CURRENT.accent, tint: CURRENT.tint };
+    var hit = P.filter(function (p) { return p[1] === col.main && p[2] === col.accent && p[3] === col.tint; })[0];
+    name = hit ? hit[0] : (CURRENT.palette || "Custom");
+    el("s-bf").value = CURRENT.body_font; el("s-hf").value = CURRENT.heading_font || "Same as body";
+    el("s-h").value = CURRENT.headings; el("s-t").value = CURRENT.table_header; el("s-sh").value = CURRENT.boxes;
+    el("s-fl").value = CURRENT.box_fill; el("s-lw").value = CURRENT.line_weight;
+  } else { el("s-lw").value = "regular"; }
+  draw();
+})();
+</script>
+</body>
+</html>

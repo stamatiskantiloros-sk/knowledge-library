@@ -380,6 +380,33 @@ def cmd_check_figures(args) -> int:
     return code
 
 
+def cmd_style(args) -> int:
+    from .config import load_config
+    from .handbook import theme
+    root = _lib(args)
+    if args.apply:
+        try:
+            chosen = theme.parse(args.apply)
+            path = theme.save(root, chosen)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 2
+        print(f"saved to {path} (the old file is beside it as .bak):")
+        for k, v in theme.resolve(chosen).items():
+            if v is not None:
+                print(f"  {k}: {v}")
+        print("next: knowlib figures render <figure folders> for the drawn figures, then "
+              "knowlib handbook --finish for the PDF")
+        return 0
+    page = theme.picker(root, load_config(root))
+    print(page)
+    if not args.no_open:
+        import webbrowser
+        webbrowser.open(page.as_uri())
+        print("pick a look in the browser, then run the command the page gives you")
+    return 0
+
+
 def cmd_figures(args) -> int:
     from .config import load_config
     from .handbook import figures
@@ -477,6 +504,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--limit", type=int, default=0, help="only the first N figures, to try a model")
     s.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     s.set_defaults(fn=cmd_check_figures)
+    s = lib(sub.add_parser("style", help="pick the handbook's look in the browser: palette, typefaces, figure styling"))
+    s.add_argument("--apply", metavar="SETTINGS", help="save the settings line the picker page gives you")
+    s.add_argument("--no-open", action="store_true", help="write the picker page without opening it")
+    s.set_defaults(fn=cmd_style)
     s = lib(sub.add_parser("figures", help="redraw handbook slides in the handbook's style from design briefs"))
     s.add_argument("action", choices=["make", "render", "sheet"],
                    help="make: draw, check and compare each brief.json; render: render a hand-edited fig again; "

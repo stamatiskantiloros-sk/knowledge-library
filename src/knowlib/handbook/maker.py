@@ -515,6 +515,10 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None) -> str
             css = css if "<style" in css else f"<style>\n{css}\n</style>\n"
         else:
             log.warning("handbook.style_file %s not found; using the default style", path)
+    from . import theme as look
+    if look.chosen(cfg or {}):                             # the library's theme wins over its style file
+        head, sep, tail = css.rpartition("</style>")
+        css = head + look.css(look.chosen(cfg)) + sep + tail
     # page numbers, and the signature if any, in the page footer; first in the style so a library's
     # own @page rule can restyle them (fonts do not inherit into page margins)
     footer = "@page { @bottom-right { content: counter(page); font-size: 8pt; color: #8a7a80; }"

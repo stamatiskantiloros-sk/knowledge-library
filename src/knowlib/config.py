@@ -96,6 +96,9 @@ DEFAULTS: dict[str, Any] = {
         "signature": None,                   # a line at the foot of every page and at the end
         "tagline": None,                     # a line printed at the end
         "show_times": True,                  # recording times in slide captions and section endings
+        "theme": None,                       # the look, set by `knowlib style`: palette, main, accent, tint,
+                                             # body_font, heading_font, headings, table_header, boxes, box_fill,
+                                             # line_weight. It wins over style_file and drives the figures.
         "max_tokens": 6000,
         "figures": {                         # `knowlib figures`: slides redrawn in the handbook's style
             "writer": {"backend": "chain", "max_tokens": 8000, "reasoning_effort": "low",     # first drawing

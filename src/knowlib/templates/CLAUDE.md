@@ -117,6 +117,10 @@ When the user asks for a handbook, the agent writes it, so no API key or local w
    - `knowlib figures make <figures folder>` draws each one (a cheap model writes the code, the tool renders it, a script checks the labels and privacy, a vision model compares it with the slide, two revisions).
    - Look at each `fig.png` beside its slide. Fix small things in `fig.<ext>` yourself and run `knowlib figures render <folder>`. Write `verdict.json` (`accept`, `reject`, `keep-slide`, `table` or `drop`, and a reason naming what you checked).
    - `knowlib figures sheet <figures folder>` writes `review.html`. The user approves figures before any goes into the draft.
+6. The look, when the user wants to choose or change it: `knowlib style -L .` opens a picker page in the browser (ready-made looks, palettes, their own colours, typefaces, heading and table styles, figure boxes) with a live sample. The page gives a `knowlib style --apply '...'` command; run it for the user when they hand it to you. It saves the choice as `handbook.theme` in `{{CONFIG}}` and changes nothing else there.
+   - The theme wins over `handbook.style_file` in the PDF, and models that draw figures get its colours and typeface.
+   - Figures specified by hand in Typst import `figures/style.typ`, which knowlib writes from the theme. Draw with its helpers (`node`, `arrow`, `path`, `label`, `tag`) and its names (`garnet` is the main colour, `charcoal` the accent, `tint`, `corner`), never with fixed colours, so a new look needs no redrawing by hand.
+   - After a change: `knowlib figures render <folder>` for each drawn figure, then `knowlib handbook --finish`, then check every page.
 
 ---
 

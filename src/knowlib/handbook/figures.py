@@ -89,7 +89,15 @@ class PrivateContent(RuntimeError):
 
 
 def settings(cfg: dict) -> dict:
-    return (cfg.get("handbook") or {}).get("figures") or {}
+    """handbook.figures, with the library's handbook.theme (knowlib style) over its colours and font."""
+    from . import theme as look
+    fs = dict((cfg.get("handbook") or {}).get("figures") or {})
+    chosen = look.chosen(cfg)
+    if chosen:
+        t = look.resolve(chosen)
+        fs.update(font=t["body_font"], main=t["main"], accent=t["accent"], tint=t["tint"])
+    fs["_theme"] = chosen
+    return fs
 
 
 def theme(fs: dict) -> dict:
@@ -208,7 +216,9 @@ def render(d: Path, tool: str, fs: dict) -> str:
         _run(["d2", "--theme", "0", "--pad", "16", *fonts, src.name, "fig.svg"], d)
         _run(["rsvg-convert", "-w", "1400", "-b", "white", "fig.svg", "-o", "fig.png"], d)
     elif tool == "typst":
-        root = ["--root", str(d.parent)]       # figures may share a style file one level up ("../style.typ")
+        from . import theme as look
+        look.sync_figure_style(d.parent, fs.get("_theme"))   # the shared "../style.typ", kept in step with the theme
+        root = ["--root", str(d.parent)]
         _run(["typst", "compile", *root, src.name, "fig.pdf"], d)
         _run(["typst", "compile", *root, "--ppi", "300", src.name, "fig.png"], d)
         _run(["typst", "compile", *root, src.name, "fig.svg"], d)

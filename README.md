@@ -76,6 +76,7 @@ knowlib digest -L ~/KnowledgeLibrary             # finding aid for each book (PD
 knowlib handbook --prepare --output ~/Handbooks --only "<lecture>"   # brief for a study handbook
 knowlib handbook --finish --output ~/Handbooks   # check the draft, write handbook.md and .pdf
 knowlib figures make ~/Handbooks/<lecture>/figures   # redraw slides from the agent's design briefs
+knowlib style                                    # pick the handbook's look in the browser, then save it
 ```
 
 Long runs show a progress bar per stage with the time left; in a log file the same line is written every 30 seconds.
