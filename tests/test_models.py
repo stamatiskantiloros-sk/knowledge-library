@@ -377,3 +377,10 @@ def test_a_provider_with_several_keys_gives_one_chain_member_per_key(tmp_path, m
     assert all(m["limits"] == {"rpd": 20} for m in ms[:3])                              # each key counts its own day
     keys = [OpenAICompatProvider(m["section"]).api_key for m in ms[:3]]
     assert keys == ["secret-one", "secret-two", "secret-three"]                        # never the main key twice
+
+
+def test_dates_and_year_ranges_are_not_taken_for_phone_numbers():
+    from knowlib import privacy
+    for text in ("updated: 2026-11-13", "13-11-2026", "(1974-1979)", "1974 - 1979"):
+        assert privacy.redact(text, []) == text and not privacy.reasons(text, [])
+    assert privacy.redact("210-123-4567", []) == "[a phone number]"

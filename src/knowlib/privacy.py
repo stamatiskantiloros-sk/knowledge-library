@@ -16,6 +16,8 @@ def _is_phone(m: re.Match) -> bool:
     """A run of digits that is not a row of a table or chart axis: years (1988 1989 1990) or groups of
     one length (100 200 300) separated by spaces only."""
     run = m.group(0)
+    if re.fullmatch(r"\(?\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4}|\(?\d{4} ?- ?\d{4}\)?", run.strip()):
+        return False                                   # a date or a range of years, not a phone number
     if re.search(r"[+()-]", run):
         return True
     groups = run.split()
