@@ -358,6 +358,12 @@ def test_spoken_only_names_are_replaced_in_text_but_not_masked_in_images():
     cfg = {"privacy": {"names": ["Nick"], "spoken_only": ["Maria"]}}
     assert privacy.names(cfg) == ["Nick"] and privacy.text_names(cfg) == ["Nick", "Maria"]
     assert privacy.redact("Nick and Maria", privacy.text_names(cfg)) == "[a person] and [a person]"
+    prompt = ("Book: Maria Elena Lagomasino joined the board; Nick Leeson broke Barings.\n"
+              "[48:38] Okay, Maria, what do you think?\n"
+              'Transcript spoken during it:\n"""So Maria said no."""')
+    out = privacy.redact_speech(privacy.redact(prompt, privacy.names(cfg)), privacy.spoken_only(cfg))
+    assert "Maria Elena Lagomasino" in out and "[a person] Leeson" in out          # Nick: everywhere
+    assert "[48:38] Okay, [a person], what" in out and '"""So [a person] said no."""' in out
 
 
 def test_a_provider_with_several_keys_gives_one_chain_member_per_key(tmp_path, monkeypatch):

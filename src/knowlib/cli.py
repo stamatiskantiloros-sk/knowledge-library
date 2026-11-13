@@ -426,7 +426,7 @@ def cmd_figures(args) -> int:
 
 def cmd_names(args) -> int:
     """Names said in class, as a proposal for privacy.names (only in speech) and privacy.spoken_only
-    (also in the materials: replaced in text, never masked out of a slide)."""
+    (also in the materials: replaced only in what people say, never in a book or on a slide)."""
     import re
     import yaml
     from . import privacy

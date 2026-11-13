@@ -115,9 +115,28 @@ def spoken_names(texts: dict[str, tuple[str, bool]]) -> list[dict]:
     return sorted(found.values(), key=lambda e: (-e["count"], e["name"]))
 
 
+def spoken_only(cfg: dict) -> list[str]:
+    return [str(n) for n in ((cfg.get("privacy") or {}).get("spoken_only") or []) if str(n).strip()]
+
+
+_TIMESTAMPED = re.compile(r"^\s*\[\d+:\d\d(?::\d\d)?\].*$", re.M)
+_TRANSCRIPT_BLOCK = re.compile(r'(Transcript[^\n]*:\s*\n?""")(.*?)(""")', re.S)
+
+
+def redact_speech(text: str, ns: list[str], label: str = "[a person]") -> str:
+    """The text with the names replaced only where people are speaking: timestamped transcript lines
+    ("[48:38] ...") and a prompt's transcript block. A book passage keeps its names, so a student
+    who shares a first name with Paul Volcker does not cost the book its Volcker."""
+    if not (rx := _name_re(ns)):
+        return text
+    text = _TIMESTAMPED.sub(lambda m: rx.sub(label, m.group(0)), text)
+    return _TRANSCRIPT_BLOCK.sub(lambda m: m.group(1) + rx.sub(label, m.group(2)) + m.group(3), text)
+
+
 def text_names(cfg: dict) -> list[str]:
-    """Names to replace in text sent off the machine: privacy.names, and privacy.spoken_only (names said
-    in class that the materials also use, e.g. a student who shares a first name with a director on a
-    slide). Images are masked for privacy.names only, so the slide keeps the director's name."""
+    """Every name the library protects: privacy.names (replaced in all text sent off the machine and
+    blacked out in images) and privacy.spoken_only (names said in class that the materials also use,
+    e.g. a student who shares a first name with a director on a slide: replaced only where people
+    speak, see redact_speech)."""
     extra = [str(n) for n in ((cfg.get("privacy") or {}).get("spoken_only") or []) if str(n).strip()]
     return names(cfg) + extra

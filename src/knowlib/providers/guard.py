@@ -87,7 +87,7 @@ class PrivacyGuard(VisionProvider):
     def __init__(self, inner: VisionProvider, cfg: dict):
         self.inner, self.cfg = inner, cfg
         self.names = privacy.names(cfg)                # masked in images and replaced in text
-        self.text_names = privacy.text_names(cfg)      # replaced in text only
+        self.spoken_only = privacy.spoken_only(cfg)    # replaced only where people speak
         self._sendable: dict[str, Path] = {}
         self._tmp = Path(tempfile.mkdtemp(prefix="knowlib-masked-"))
 
@@ -125,7 +125,7 @@ class PrivacyGuard(VisionProvider):
 
     def generate(self, images: list[Path], prompt: str, **kw) -> str:
         send = [self.sendable(im) for im in images]
-        return self.inner.generate(send, privacy.redact(prompt, self.text_names), **kw)
+        return self.inner.generate(send, privacy.redact_speech(privacy.redact(prompt, self.names), self.spoken_only), **kw)
 
     def close(self) -> None:
         self.inner.close()
