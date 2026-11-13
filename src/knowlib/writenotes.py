@@ -172,8 +172,12 @@ def strip_fences(reply: str) -> str:
                 k = re.match(r"^(title|updated):\s*(.+)$", line)
                 if k and not k[2].startswith(("'", '"')):
                     line = f"{k[1]}: " + '"' + k[2].replace('"', '\\"') + '"'
+                if re.match(r"^\s*(sources|aliases):", line) or re.match(r"^\s*-\s*@", line):
+                    line = line.replace("[@", "[").replace(", @", ", ").replace(",@", ",")   # citation marks
+                    line = re.sub(r"^(\s*-\s*)@", r"\1", line)
                 lines.append(line)
             note = "---\n" + "\n".join(lines) + "\n---\n" + note[fm.end():]
+            yaml.safe_load(note[4:note.index("\n---\n", 4)])        # still unreadable: the caller retries
     return note
 
 
@@ -285,8 +289,10 @@ def run(root: Path, plan: Path, *, themes_wanted: list[str], notes_wanted: list[
                 except AgentPending:
                     pending += 1
                 except NotEnoughMemory:
+                    out.unlink(missing_ok=True)
                     raise
                 except Exception as e:  # noqa: BLE001 - one note must not stop the run
+                    out.unlink(missing_ok=True)        # a half-written note would be skipped next time
                     print(f"write-notes: {slug}: failed ({type(e).__name__}: {e}); going on", file=sys.stderr)
                     logline(f"{slug} (theme {t['letter']}): FAILED ({type(e).__name__}: {str(e)[:200]}); run again to retry")
     finally:

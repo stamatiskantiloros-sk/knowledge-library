@@ -739,3 +739,11 @@ def test_last_page_signature_takes_several_lines_stacked_beside_the_page_number(
         number = d[-1].search_for("2")[-1]
         assert first.y1 < second.y1 and second.x1 < number.x0 and abs(second.y1 - number.y1) < 4
         assert not d[0].search_for("cooked")
+
+
+def test_a_note_header_with_citation_marks_in_sources_is_cleaned():
+    from knowlib.writenotes import strip_fences
+    import yaml
+    note = strip_fences("```markdown\n---\ntitle: M&A: valuation\nsources: [@book-1a2b, @slides-3c4d]\n---\n# M&A\n```")
+    head = yaml.safe_load(note.split("---\n")[1])
+    assert head["sources"] == ["book-1a2b", "slides-3c4d"] and head["title"] == "M&A: valuation"
