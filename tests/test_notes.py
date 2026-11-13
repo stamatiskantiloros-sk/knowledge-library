@@ -227,3 +227,10 @@ def test_a_formula_block_cited_on_its_last_line_is_one_claim():
     note.body = body
     got = claims(note)
     assert len(got) == 2 and got[0][1].endswith("[@b, p. 2].") and got[1][1] == "$$X = 1$$"
+
+
+def test_negative_numbers_and_currency_prefixes_match_how_books_print_them():
+    from knowlib.notecheck import present
+    assert present({-3353.0}, "Net working capital = 10,890 - 14,243 = - $3,353") == {-3353.0}
+    assert present({-4000.0, 2.53}, "NPV = − 4,000 + ... NPV at 10% of $A2.53 billion") == {-4000.0, 2.53}
+    assert present({3353.0}, "- $3,353") == {3353.0} and present({12.0}, "no such number") == set()

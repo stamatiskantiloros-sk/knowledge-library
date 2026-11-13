@@ -54,11 +54,19 @@ def norm(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def present(values: set[float], text: str) -> set[float]:
+    """The values found in the text. A value also counts as found with the other sign:
+    books print the sign apart ("- $3,353", "−A$30 billion") or leave it to the column."""
+    have = number_values(text)
+    return {v for v in values if v in have or -v in have}
+
+
 def number_values(text: str) -> set[float]:
     """Numbers as values, so 8.5% matches 8.50 and 1,000 matches 1000. A comma before exactly
     three digits groups thousands; any other comma is a decimal comma."""
     out = set()
-    for raw in NUM.findall(unicodedata.normalize("NFKC", text)):
+    text = re.sub(r"(\$[A-Z]{1,3})(?=\d)", r"\1 ", unicodedata.normalize("NFKC", text))   # $A2.53, $NZ10
+    for raw in NUM.findall(text):
         n = raw.rstrip("%").strip(".,")
         n = re.sub(r",(?=\d{3}(\D|$))", "", n).replace(",", ".")
         try:
@@ -136,9 +144,9 @@ def claims(note: Note) -> list[tuple[str, str]]:
         if section is None or section.lower().startswith("related") or not text or text.startswith(("#", "|", "```", ">")):
             joinable = False
             continue
-        # a display formula, or the "where" that introduces its terms, belongs to the claim it sits in:
-        # a block cited once, on its last line, is one claim
-        if joinable and (text.startswith("$$") or re.fullmatch(r"where:?", text, re.I)):
+        # a display formula, the "where" that introduces its terms, or a citation on a line of its own
+        # belongs to the claim it sits in: a block cited once, on its last line, is one claim
+        if joinable and (text.startswith(("$$", "[@")) or re.fullmatch(r"where:?", text, re.I)):
             out[-1] = (section, out[-1][1] + " " + text)
             continue
         out.append((section, re.sub(r"^([-*]|\d+\.)\s+", "", text)))
@@ -228,7 +236,7 @@ class Source:
         for j in (i - 1, i + 1):
             if 0 <= j < len(self.page_order):
                 t = self.pages[self.page_order[j]]
-                if values <= number_values(t) and all(q in norm(t) for q in quotes):
+                if values <= present(values, t) and all(q in norm(t) for q in quotes):
                     return self.page_order[j]
         return ""
 
@@ -269,7 +277,7 @@ def check_citations(notes: list[Note], sources: dict[str, Source]) -> list[Findi
                     continue
                 if len(cites) > 1:
                     continue                           # several sources: the numbers may come from any one
-                missing = values - number_values(region)
+                missing = values - present(values, region)
                 lost = [q for q in quotes if q not in norm(region)]
                 if missing or lost:
                     what = ", ".join([*(f"{v:g}" for v in sorted(missing)), *(f'"{q[:40]}"' for q in lost)])
