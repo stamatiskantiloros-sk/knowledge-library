@@ -382,3 +382,10 @@ Choosing a look by describing it in words was slow: the user could not see a pal
   - Figures specified by hand: `figures/style.typ` is written from the theme (`templates/figure-style.typ`) each time a Typst figure is rendered. A style file someone wrote by hand is left alone.
 - **Why the figures follow.** Hand-specified figures use the style's helpers and colour names, never fixed values. Switching Lecture 1 from its hand-written style file to the generated one changed no pixel in the four figures compared.
 - **Limit.** A box a figure draws itself, without the `node` helper, keeps its own corner radius unless it uses the style's `corner`.
+
+## 19. Title, date, file name and signature
+
+- **The date.** Each handbook names its lecture and the day it took place. The date is the lecture's `original_date`, which ingestion takes from the recording's metadata.
+- **Under the title.** The line reads "Lecture notes · <course> · <date>". The course is `handbook.course`, or the library folder's name when that is not set. `handbook.subtitle` changes "Lecture notes"; `false` removes the line.
+- **The PDF's name.** It is built from the lecture title and date, for example `Lecture 1 - Introduction to Operations Management - 2026-11-10.pdf`. The course is put first when the title does not already name it. Its document title is the lecture's title. An earlier build under `handbook.pdf` or an older date is removed.
+- **The signature.** `handbook.last_page_signature` is written once, small and italic in the footer's grey, in the bottom right corner of the last page, just left of the page number. It is stamped into the finished PDF, because Chrome cannot style only the last page. `byline` (under the title) and `signature` (in every page's footer) remain for libraries that want those.

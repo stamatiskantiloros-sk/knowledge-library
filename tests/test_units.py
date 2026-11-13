@@ -682,3 +682,29 @@ def test_lecture_in_parts_joins_audio_and_labels_slides(tmp_path):
     assert "## Slide 1 (00:00–00:02) · Part A" in out
     assert "## Slide 2 (00:02–00:05) · After the break" in out
     assert out.index("*Recorded in parts:") < out.index("*Duration")
+
+
+def test_handbook_pdf_is_named_and_dated_from_the_lecture():
+    from knowlib.handbook.maker import long_date, pdf_name
+    assert long_date("2026-11-10") == "10 November 2026" and long_date("") == "" and long_date("autumn") == "autumn"
+    assert pdf_name("Lecture 1: Introduction to Operations Management", "2026-11-10", "Operations Management") == \
+        "Lecture 1 - Introduction to Operations Management - 2026-11-10.pdf"
+    assert pdf_name("Session 3: WACC", "2026-11-12", "Corporate Finance") == "Corporate Finance - Session 3 - WACC - 2026-11-12.pdf"
+    assert pdf_name('A/B "test"?', "", "") == "AB test.pdf"
+
+
+def test_the_signature_goes_once_in_the_last_pages_corner(tmp_path):
+    import pymupdf
+    from knowlib.handbook.maker import _sign_last_page
+    doc = pymupdf.open()
+    for n in (1, 2):
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((540, 820), str(n), fontsize=8)          # the page number in the footer
+    path = tmp_path / "book.pdf"
+    doc.save(path)
+    _sign_last_page(path, "made by Maria")
+    with pymupdf.open(path) as out:
+        assert "Maria" not in out[0].get_text() and "made by Maria" in out[1].get_text().replace("\xa0", " ")
+        sign = [w for w in out[1].get_text("words") if "Maria" in w[4]][-1]
+        num = [w for w in out[1].get_text("words") if w[4] == "2"][0]
+        assert sign[2] < num[0] and abs(sign[3] - num[3]) < 3 and sign[1] > 790   # left of the number, same line

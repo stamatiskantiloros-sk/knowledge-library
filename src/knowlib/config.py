@@ -93,6 +93,9 @@ DEFAULTS: dict[str, Any] = {
         "style_file": None,                  # a CSS file (relative to the library) for the PDF; None: the plain default
         "speaker": "the lecturer",           # what the book calls the person teaching ("the professor", ...)
         "byline": None,                      # one line under the title, e.g. who made it
+        "course": None,                      # course name under the title and in the PDF's name (default: the library folder)
+        "subtitle": "Lecture notes",         # the line under the title: "<subtitle> · <course> · <date>"; false for none
+        "last_page_signature": None,         # once, small, in the bottom right corner of the last page
         "signature": None,                   # a line at the foot of every page and at the end
         "tagline": None,                     # a line printed at the end
         "show_times": True,                  # recording times in slide captions and section endings

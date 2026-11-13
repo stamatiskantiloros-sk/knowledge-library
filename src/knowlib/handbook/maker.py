@@ -166,6 +166,7 @@ class Lecture:
     title: str
     folder: Path
     slides: list[Slide] = field(default_factory=list)
+    date: str = ""                       # when the lecture took place (original_date, from the recording)
 
 
 def _between(block: str, start: str, ends: tuple[str, ...]) -> str:
@@ -186,7 +187,8 @@ def parse_source(path: Path, source_id: str = "", key: str = "") -> Lecture:
     raw = md.read_text(encoding="utf-8")
     meta = yaml.safe_load(raw.split("---", 2)[1]) or {}
     body = raw.split("---", 2)[2].split("\n## Dropped frames", 1)[0]   # not slides
-    lecture = Lecture(source_id or folder.name, key, str(meta.get("title", folder.name)), folder)
+    lecture = Lecture(source_id or folder.name, key, str(meta.get("title", folder.name)), folder,
+                      date=str(meta.get("original_date") or "")[:10])
     labels = ("**OCR text", "**Figure:**", "**Spoken:**")
     head, *blocks = re.split(r"^## Slide ", body, flags=re.M)
     before = head.split("## Before the first slide")[1].split("\n", 1)[-1].strip() if "## Before the first slide" in head else ""
@@ -503,13 +505,62 @@ th, td { border: 1px solid #bbb; padding: 3px 8px; }
 blockquote { border-left: 3px solid #bbb; margin-left: 0; padding-left: 1em; color: #333; }
 h2 { break-after: avoid; } img, table { break-inside: avoid; }
 .kl-byline { text-align: center; color: #555; font-style: italic; margin: 0 0 1.5em; }
+.kl-subtitle { text-align: center; color: #555; font-style: italic; margin: -.4em 0 1.2em; }
 .kl-sign-off, .kl-tagline { text-align: center; margin-top: 2em; color: #555; }
 .kl-tagline { font-style: italic; margin-top: 0.5em; }
 </style>
 """
 
 
-def _export(out: Path, cfg: dict | None = None, root: Path | None = None) -> str | None:
+MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+          "November", "December")
+
+
+def long_date(iso: str) -> str:
+    """2026-11-10 -> 10 November 2026; anything else as it is."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", iso or "")
+    return f"{int(m[3])} {MONTHS[int(m[2]) - 1]} {m[1]}" if m and 1 <= int(m[2]) <= 12 else (iso or "")
+
+
+def pdf_name(title: str, date: str = "", course: str = "") -> str:
+    """The PDF's file name from the lecture: 'Lecture 1 - Introduction to Operations Management - 2026-11-10.pdf'.
+    The course goes first when the title does not already name it."""
+    name = re.sub(r"\s*:\s*", " - ", title.strip()) or "handbook"
+    if course and course.casefold() not in name.casefold():
+        name = f"{course} - {name}"
+    if date:
+        name += f" - {date}"
+    name = re.sub(r'[\\/*?"<>|]+', "", name)                 # characters file systems reject
+    return re.sub(r"\s+", " ", name).strip()[:150] + ".pdf"
+
+
+def _sign_last_page(pdf: Path, text: str, colour: str = "#8a8285") -> None:
+    """The signature, once, small, in the bottom right corner of the last page: right-aligned, on the line
+    of the page number and just left of it (or at the right margin if there is none)."""
+    import pymupdf
+    italic = Path("/System/Library/Fonts/Supplemental/Georgia Italic.ttf")
+    font = pymupdf.Font(fontfile=str(italic)) if italic.exists() else pymupdf.Font("tiri")
+    size = 7.2
+    rgb = tuple(int(colour.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    with pymupdf.open(pdf) as doc:
+        page = doc[-1]
+        w, h = page.rect.width, page.rect.height
+        foot = [wd for wd in page.get_text("words") if wd[1] > h - 18 * 72 / 25.4 and wd[4].isdigit()]
+        if foot:
+            num = max(foot, key=lambda wd: wd[2])
+            right, base = num[0] - 3 * 72 / 25.4, num[3] - 1.4
+        else:
+            right, base = w - 15 * 72 / 25.4, h - 8 * 72 / 25.4
+        x = right - font.text_length(text, fontsize=size)
+        page.insert_text((x, base), text, fontsize=size, fontname="kl-sign", fontfile=str(italic) if italic.exists() else None,
+                         color=rgb)
+        doc.saveIncr() if doc.can_save_incrementally() else doc.save(str(pdf) + ".tmp")
+    if Path(str(pdf) + ".tmp").exists():
+        Path(str(pdf) + ".tmp").replace(pdf)
+
+
+def _export(out: Path, cfg: dict | None = None, root: Path | None = None, *, title: str = "",
+            date: str = "") -> str | None:
     """Pandoc writes MathML and Chrome prints it; WeasyPrint does not render MathML. The library's
     handbook.style_file replaces the default style; its signature goes in every page's footer (a page
     margin box, beside the page number) and, with the tagline, at the end."""
@@ -545,13 +596,23 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None) -> str
     (out / ".after.html").write_text(after, encoding="utf-8")
     lang = {"english": "en", "greek": "el"}.get(str(hb.get("language", "English")).lower(), "en")
     source = "handbook.md"
-    if hb.get("byline"):                                   # one line under the title, in the PDF only
+    course = str(hb.get("course") or (root.name if root else "")).strip()
+    lines = []                                             # under the title, in the PDF only
+    if hb.get("subtitle", True) is not False:
+        parts = [str(hb.get("subtitle") or "Lecture notes"), course, long_date(date)]
+        lines.append(f'<p class="kl-subtitle">{html.escape(" · ".join(p for p in parts if p))}</p>')
+    if hb.get("byline"):
+        lines.append(f'<p class="kl-byline">{html.escape(str(hb["byline"]))}</p>')
+    if lines:
         md = (out / "handbook.md").read_text(encoding="utf-8")
-        line = f'\n<p class="kl-byline">{html.escape(str(hb["byline"]))}</p>\n'
-        md = re.sub(r"^(# .+)$", lambda m: m.group(1) + "\n" + line, md, count=1, flags=re.M)
+        block = "\n" + "\n".join(lines) + "\n"
+        md = re.sub(r"^(# .+)$", lambda m: m.group(1) + "\n" + block, md, count=1, flags=re.M)
         (out / ".print.md").write_text(md, encoding="utf-8")
         source = ".print.md"
-    r = subprocess.run(["pandoc", source, "-s", "--math-method=mathml", "--metadata", "pagetitle=Handbook",
+    name = pdf_name(title, date, course) if title else "handbook.pdf"
+    pdf = out / name
+    r = subprocess.run(["pandoc", source, "-s", "--math-method=mathml", "--metadata", f"pagetitle={title or 'Handbook'}",
+                        "--metadata", f"title-meta={title or 'Handbook'}",
                         "--metadata", f"lang={lang}",                    # lets Chrome hyphenate justified text
                         "-H", ".style.html", "-B", ".before.html", "-A", ".after.html", "-o", ".print.html"],
                        cwd=out, capture_output=True, text=True)
@@ -560,14 +621,25 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None) -> str
     (out / ".print.md").unlink(missing_ok=True)
     if r.returncode == 0:
         r = subprocess.run([str(CHROME), "--headless", "--disable-gpu", "--no-pdf-header-footer",
-                            f"--print-to-pdf={out / 'handbook.pdf'}", (out / ".print.html").as_uri()],
+                            f"--print-to-pdf={pdf}", (out / ".print.html").as_uri()],
                            capture_output=True, text=True)
     (out / ".style.html").unlink(missing_ok=True)
     (out / ".print.html").unlink(missing_ok=True)
-    if r.returncode != 0 or not (out / "handbook.pdf").exists():
+    if r.returncode != 0 or not pdf.exists():
         log.warning("pdf export failed: %s", r.stderr.strip()[-300:])
         return None
-    return str(out / "handbook.pdf")
+    import pymupdf
+    with pymupdf.open(pdf) as doc:                         # the title readers and file browsers show
+        doc.set_metadata({**(doc.metadata or {}), "title": title or "Handbook", "subject": long_date(date)})
+        doc.saveIncr() if doc.can_save_incrementally() else doc.save(str(pdf) + ".tmp")
+    if Path(str(pdf) + ".tmp").exists():
+        Path(str(pdf) + ".tmp").replace(pdf)
+    if hb.get("last_page_signature"):
+        _sign_last_page(pdf, str(hb["last_page_signature"]))
+    for old in out.glob("*.pdf"):                         # earlier builds under another name
+        if old != pdf and (old.name == "handbook.pdf" or old.name.startswith(pdf.name.rsplit(" - ", 1)[0])):
+            old.unlink()
+    return str(pdf)
 
 
 def _select(root: Path, input_dir: Path | None, only: list[str] | None):
@@ -700,7 +772,7 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     review += [f"- Slide {s.n} ({s.start})" for s in flagged] or ["None."]
     (out / "review.md").write_text("\n".join(review) + "\n", encoding="utf-8")
     return {"lecture": lecture.title, "issues": len(issues), "flagged": len(flagged),
-            "output": str(out), "pdf": _export(out, cfg, _library_root(folder))}
+            "output": str(out), "pdf": _export(out, cfg, _library_root(folder), title=lecture.title, date=lecture.date)}
 
 
 def _library_root(md: Path) -> Path | None:

@@ -75,7 +75,7 @@ def css(theme: dict) -> str:
     rules = [
         "/* handbook.theme */",
         f':root {{ --main: {t["main"]}; --accent: {t["accent"]}; --tint: {t["tint"]}; }}',
-        f"body, p, li, td, th, blockquote, figcaption, table caption, h1::after, h3, math, .kl-sign-off, .kl-tagline "
+        f"body, p, li, td, th, blockquote, figcaption, table caption, h1::after, h3, math, .kl-subtitle, .kl-sign-off, .kl-tagline "
         f"{{ font-family: {body}; }}",
         f"h1, h2, .kl-byline {{ font-family: {head}; }}",
         f'@page {{ @bottom-right {{ color: {t["main"]}; font-family: {body}; }} '
