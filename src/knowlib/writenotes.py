@@ -283,16 +283,25 @@ def run(root: Path, plan: Path, *, themes_wanted: list[str], notes_wanted: list[
                 out = ctx.layout.notes / f"{slug}.md"
                 if out.exists() and not force:
                     continue
+                before = out.read_text(encoding="utf-8") if out.exists() else None
+
+                def undo() -> None:
+                    """Back to the note as it was: a half-written note would be skipped next time,
+                    and a failed rewrite (--force) must not cost the note it was replacing."""
+                    if before is None:
+                        out.unlink(missing_ok=True)
+                    else:
+                        out.write_text(before, encoding="utf-8")
                 try:
                     if write_one(slug, desc, t, out) == "written":
                         written.append(slug)
                 except AgentPending:
                     pending += 1
                 except NotEnoughMemory:
-                    out.unlink(missing_ok=True)
+                    undo()
                     raise
                 except Exception as e:  # noqa: BLE001 - one note must not stop the run
-                    out.unlink(missing_ok=True)        # a half-written note would be skipped next time
+                    undo()
                     print(f"write-notes: {slug}: failed ({type(e).__name__}: {e}); going on", file=sys.stderr)
                     logline(f"{slug} (theme {t['letter']}): FAILED ({type(e).__name__}: {str(e)[:200]}); run again to retry")
     finally:
