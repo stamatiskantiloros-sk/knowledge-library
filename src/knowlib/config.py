@@ -131,7 +131,7 @@ DEFAULTS: dict[str, Any] = {
         # model reviews. Set openai_model (and context_length, reasoning_effort) for another local
         # model, or backend: agent with agent_model: sonnet for a session subagent. Pick a model
         # unlike the writer's, so they do not share blind spots.
-        "max_tokens": 4000,
+        "max_tokens": 16000,                # thinking models spend much of it before they answer
         "max_passage_chars": 8000,           # each cited passage is cut to this length
         "retries": 1,                        # a reply cut off at the token limit is asked again with twice the tokens
         # Notes per request for a chain. 1 (the default) asks about each note on its own: in a test with

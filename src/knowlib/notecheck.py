@@ -154,6 +154,18 @@ def claims(note: Note) -> list[tuple[str, str]]:
     return out
 
 
+def at_time(slide: str, t: float, after: int = 1) -> str:
+    """A slide cited at a time: what the slide shows, then the spoken paragraph at that time and the
+    next one. A slide can carry half an hour of speech; the whole of it would bury the passage."""
+    stamps = list(re.finditer(r"^\[([\d:]+)\]", slide, re.M))
+    if not stamps:
+        return slide
+    shown = slide[:stamps[0].start()]
+    i = max((k for k, s in enumerate(stamps) if seconds(s[1]) <= t + 1), default=0)
+    j = min(i + 1 + after, len(stamps))
+    return shown.rstrip() + "\n\n" + slide[stamps[i].start(): stamps[j].start() if j < len(stamps) else None].strip()
+
+
 class Source:
     """One source's Markdown, cut into the places a citation can point to. path is the Markdown
     file, or (separate mode, and the tests) its sources/<id>/ folder."""
@@ -208,6 +220,8 @@ class Source:
             text, start, end = self.slides[n]
             if m[2] and start is not None and not (start - 1 <= seconds(m[2]) <= (end or start) + 1):
                 return None, f"slide {n} runs {m_s(start)}–{m_s(end)}, not {m[2]}"
+            if m[2]:
+                return at_time(text, seconds(m[2])), ""
             return text, ""
         if TIME.match(loc):
             t = seconds(loc)

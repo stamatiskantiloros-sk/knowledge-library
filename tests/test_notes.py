@@ -234,3 +234,15 @@ def test_negative_numbers_and_currency_prefixes_match_how_books_print_them():
     assert present({-3353.0}, "Net working capital = 10,890 - 14,243 = - $3,353") == {-3353.0}
     assert present({-4000.0, 2.53}, "NPV = − 4,000 + ... NPV at 10% of $A2.53 billion") == {-4000.0, 2.53}
     assert present({3353.0}, "- $3,353") == {3353.0} and present({12.0}, "no such number") == set()
+
+
+def test_a_slide_cited_at_a_time_gives_the_slide_and_the_passage_at_that_time(tmp_path):
+    md = tmp_path / "lecture.md"
+    speech = "".join(f"[{m}:00] passage {m}.\n\n" for m in range(10, 40))
+    md.write_text("---\nid: x\n---\n## Slide 8 (10:00–39:59)\n**On slide:** Goal of financial management\n\n"
+                  "**Spoken:**\n\n" + speech + "## Slide 9 (40:00–41:00)\n")
+    text, problem = Source(md, "x").region("slide 8, 30:00")
+    assert not problem and "Goal of financial management" in text
+    assert "passage 30." in text and "passage 31." in text
+    assert "passage 29." not in text and "passage 32." not in text
+    assert "passage 12." in Source(md, "x").region("slide 8")[0]

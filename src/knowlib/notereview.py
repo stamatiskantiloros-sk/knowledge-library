@@ -202,7 +202,7 @@ def run(root: Path, *, note_slugs: list[str] | None = None, overrides: dict | No
             if prompt is None:
                 continue
             try:
-                reply, cut = cache.ask_checked(provider, prompt, int(section.get("max_tokens", 4000)),
+                reply, cut = cache.ask_checked(provider, prompt, int(section.get("max_tokens", 16000)),
                                                retries=int(section.get("retries", 1)))
             except AgentPending:
                 pending += 1
@@ -213,7 +213,7 @@ def run(root: Path, *, note_slugs: list[str] | None = None, overrides: dict | No
                 findings.append(Finding("review", "warning", note.slug, f"not reviewed: the model server failed ({e}); run again"))
                 continue
             if not reply:
-                why = (f"it used all {section.get('max_tokens', 4000)} tokens before answering (thinking); raise "
+                why = (f"it used all {section.get('max_tokens', 16000)} tokens before answering (thinking); raise "
                        "notes_review.max_tokens or set notes_review.reasoning_effort"
                        if getattr(provider, "last_finish", None) == "length" else "it returned nothing")
                 findings.append(Finding("review", "warning", note.slug, f"not reviewed: {why}"))
