@@ -355,6 +355,7 @@ A slide screenshot carries the slide's colours, fonts and decoration into the bo
 | Revise | `handbook.figures.reviser` | Up to `revisions` rounds with the label misses and the checker's issues. |
 | Judge | the agent | Looks at each figure beside its slide; fixes small things by hand (`knowlib figures render`); writes `verdict.json`. |
 | Show | `knowlib figures sheet` | `review.html`: slide, figure, idea and verdict side by side. Nothing enters the draft until the user approves. |
+| Place | `knowlib handbook --finish` | An approved figure replaces the slide at its printed size. Typst figures go in as SVG: vector, so text and lines stay sharp at any zoom (the PNG at 300 ppi looked soft on screen beside the text). Typst's SVG draws text as paths, so no fonts are needed. The PNG is copied beside it for the privacy check's OCR. Figures from the other tools go in as PNG. |
 
 **Choices and findings**
 - **Tool by form.**

@@ -310,3 +310,35 @@ def test_finish_places_approved_figures_tables_and_drops(tmp_path):
     assert "![Slide 4, 0:00](assets/slide_004.png)" in text                   # no figure: the slide
     assert (out / "assets" / "fig_001.png").exists() and not issues
     assert "Table: Slide 2\n" in without_times(text) + "\n"
+
+
+def test_finish_places_typst_figures_as_svg_and_keeps_a_png_for_the_privacy_check(tmp_path):
+    import json as _json
+    from PIL import Image
+    from knowlib.handbook.maker import Lecture, Slide, _place_figures
+    Image.new("RGB", (8, 6), "white").save(tmp_path / "slide_001.png")
+    slides = [Slide(1, "0:00", "1:00", frame="slide_001.png")]
+    lec = Lecture("lec", "L/", "Lecture 1", tmp_path, slides)
+    out = tmp_path / "out"
+    d = out / "figures" / "01-cross"
+    d.mkdir(parents=True)
+    (d / "brief.json").write_text(_json.dumps({"slide": 1, "tool": "typst"}))
+    (d / "verdict.json").write_text(_json.dumps({"verdict": "accept", "reason": "checked"}))
+    Image.new("RGB", (10, 10), "white").save(d / "fig.png")
+    (d / "fig.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>')
+    issues = []
+    text = _place_figures("[[slide 1]]", slides, lec, out, issues)
+    assert "![Slide 1, 0:00](assets/fig_001.svg){.kl-fig}" in text and not issues
+    assert (out / "assets" / "fig_001.svg").exists() and (out / "assets" / "fig_001.png").exists()
+
+
+def test_privacy_check_reads_the_png_beside_a_placed_svg(tmp_path, monkeypatch):
+    from knowlib.handbook import maker
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "fig_001.svg").write_text("<svg/>")
+    (tmp_path / "assets" / "fig_001.png").write_bytes(b"png")
+    (tmp_path / "handbook.md").write_text("# H\n\n![Slide 1](assets/fig_001.svg)\n")
+    read = []
+    monkeypatch.setattr("knowlib.media.ocr.apple_vision", lambda path, oc: read.append(path.name) or "ab@example.org")
+    got = maker.personal_information(tmp_path, {})
+    assert read == ["fig_001.png"] and any("fig_001.svg shows personal information" in g for g in got)

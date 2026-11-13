@@ -474,7 +474,11 @@ def _place_figures(text: str, part: list[Slide], lecture: Lecture, out: Path, is
             if kind == "accept" and (d / "fig.png").exists():
                 (out / "assets").mkdir(exist_ok=True)
                 name = f"fig_{s.n:03d}.png"
-                shutil.copy2(d / "fig.png", out / "assets" / name)
+                shutil.copy2(d / "fig.png", out / "assets" / name)   # also what the privacy check reads
+                if brief.get("tool") == "typst" and (d / "fig.svg").exists():
+                    # vector: sharp at any zoom. Typst's SVG draws text as paths, so it needs no fonts
+                    name = f"fig_{s.n:03d}.svg"
+                    shutil.copy2(d / "fig.svg", out / "assets" / name)
                 attrs = ".kl-fig .wide" if brief.get("width") == "wide" else ".kl-fig"
                 if mm := _figure_mm(d):
                     attrs += f" width={mm:.1f}mm"
@@ -786,6 +790,8 @@ def personal_information(out: Path, cfg: dict, allow: list | None = None) -> lis
     from ..media.ocr import apple_vision
     for img in sorted(set(re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text))):
         path = out / img
+        if path.suffix == ".svg" and path.with_suffix(".png").exists():
+            path = path.with_suffix(".png")                # OCR reads the same drawing as an image
         if not path.exists():
             continue
         try:
