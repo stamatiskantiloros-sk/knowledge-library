@@ -722,3 +722,20 @@ def test_blank_last_pages_with_only_a_page_number_are_dropped(tmp_path):
     with pymupdf.open(tmp_path / "h.pdf") as d:
         assert len(d) == 2 and "More text" in d[-1].get_text()
     assert drop_blank_last_pages(tmp_path / "h.pdf") == 0                     # nothing to drop: left as it is
+
+
+def test_last_page_signature_takes_several_lines_stacked_beside_the_page_number(tmp_path):
+    import pymupdf
+    from knowlib.handbook.maker import _sign_last_page
+    doc = pymupdf.open()
+    for n in (1, 2):
+        page = doc.new_page()
+        page.insert_text((72, 72), "Body")
+        page.insert_text((540, 815), str(n))
+    doc.save(tmp_path / "h.pdf")
+    _sign_last_page(tmp_path / "h.pdf", ['"cooked" by me', "with care"], size=6.5)
+    with pymupdf.open(tmp_path / "h.pdf") as d:
+        first, second = d[-1].search_for("cooked")[0], d[-1].search_for("with care")[0]
+        number = d[-1].search_for("2")[-1]
+        assert first.y1 < second.y1 and second.x1 < number.x0 and abs(second.y1 - number.y1) < 4
+        assert not d[0].search_for("cooked")

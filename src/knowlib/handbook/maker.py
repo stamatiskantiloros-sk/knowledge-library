@@ -579,13 +579,15 @@ def pdf_name(title: str, date: str = "", course: str = "") -> str:
     return re.sub(r"\s+", " ", name).strip()[:150] + ".pdf"
 
 
-def _sign_last_page(pdf: Path, text: str, colour: str = "#8a8285") -> None:
+def _sign_last_page(pdf: Path, text: str | list, colour: str = "#8a8285", size: float = 7.2) -> None:
     """The signature, once, small, in the bottom right corner of the last page: right-aligned, on the line
-    of the page number and just left of it (or at the right margin if there is none)."""
+    of the page number and just left of it (or at the right margin if there is none). Several lines stack
+    upwards from there, the last on the page number's line and the later ones a little smaller."""
     import pymupdf
     italic = Path("/System/Library/Fonts/Supplemental/Georgia Italic.ttf")
     font = pymupdf.Font(fontfile=str(italic)) if italic.exists() else pymupdf.Font("tiri")
-    size = 7.2
+    lines = [str(x) for x in (text if isinstance(text, list) else [text]) if str(x).strip()]
+    sizes = [size if i == 0 else size * 0.9 for i in range(len(lines))]
     rgb = tuple(int(colour.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4))
     with pymupdf.open(pdf) as doc:
         page = doc[-1]
@@ -596,9 +598,12 @@ def _sign_last_page(pdf: Path, text: str, colour: str = "#8a8285") -> None:
             right, base = num[0] - 3 * 72 / 25.4, num[3] - 1.4
         else:
             right, base = w - 15 * 72 / 25.4, h - 8 * 72 / 25.4
-        x = right - font.text_length(text, fontsize=size)
-        page.insert_text((x, base), text, fontsize=size, fontname="kl-sign", fontfile=str(italic) if italic.exists() else None,
-                         color=rgb)
+        y = base
+        for line, s in reversed(list(zip(lines, sizes))):
+            x = right - font.text_length(line, fontsize=s)
+            page.insert_text((x, y), line, fontsize=s, fontname="kl-sign",
+                             fontfile=str(italic) if italic.exists() else None, color=rgb)
+            y -= s * 1.3
         doc.saveIncr() if doc.can_save_incrementally() else doc.save(str(pdf) + ".tmp")
     if Path(str(pdf) + ".tmp").exists():
         Path(str(pdf) + ".tmp").replace(pdf)
@@ -683,7 +688,9 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None, *, tit
     if Path(str(pdf) + ".tmp").exists():
         Path(str(pdf) + ".tmp").replace(pdf)
     if hb.get("last_page_signature"):
-        _sign_last_page(pdf, str(hb["last_page_signature"]))
+        sig = hb["last_page_signature"]
+        _sign_last_page(pdf, sig if isinstance(sig, list) else str(sig),
+                        size=float(hb.get("last_page_signature_size") or 7.2))
     for old in out.glob("*.pdf"):                         # earlier builds under another name
         if old != pdf and (old.name == "handbook.pdf" or old.name.startswith(pdf.name.rsplit(" - ", 1)[0])):
             old.unlink()

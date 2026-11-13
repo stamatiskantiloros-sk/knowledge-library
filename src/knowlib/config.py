@@ -95,7 +95,9 @@ DEFAULTS: dict[str, Any] = {
         "byline": None,                      # one line under the title, e.g. who made it
         "course": None,                      # course name under the title and in the PDF's name (default: the library folder)
         "subtitle": "Lecture notes",         # the line under the title: "<subtitle> · <course> · <date>"; false for none
-        "last_page_signature": None,         # once, small, in the bottom right corner of the last page
+        "last_page_signature": None,         # once, small, in the bottom right corner of the last page;
+                                             # a list for several lines (the last beside the page number)
+        "last_page_signature_size": 7.2,     # its size in pt
         "signature": None,                   # a line at the foot of every page and at the end
         "tagline": None,                     # a line printed at the end
         "show_times": True,                  # recording times in slide captions and section endings
