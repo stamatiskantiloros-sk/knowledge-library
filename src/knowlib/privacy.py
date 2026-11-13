@@ -58,3 +58,64 @@ def redact(text: str, ns: list[str], label: str = "[a person]") -> str:
     if rx := _name_re(ns):
         text = rx.sub(label, text)
     return text
+
+
+# ---- names spoken in class ---------------------------------------------------------------------
+
+_SPOKEN = re.compile(r"^\[\d+:\d\d(?::\d\d)?\]\s*(.*)$", re.M)
+# a capitalised word (or two) in mid-sentence: after a lower-case letter or a comma, or after "name is"
+_CANDIDATE = re.compile(r"(?:(?<=[a-z,;] )|(?<=name is ))([A-Z][a-z]{2,}(?: [A-Z][a-z]{2,})?)\b")
+_NOT_NAMES = set("""I'm I'll I've I'd Okay Yes Yeah No The What This That These Those There Then Do Does You And But So Why
+How When Where Who Which Can Because If Now Let We He She It They My Our Your His Her Mr Mrs Ms Dr Sir Professor
+Monday Tuesday Wednesday Thursday Friday Saturday Sunday Mondays Tuesdays Wednesdays Thursdays Fridays January
+February March April May June July August September October November December""".split())
+
+
+def _split_session(text: str) -> tuple[str, str]:
+    """(what was said, everything else) of a lecture's Markdown: slide text belongs to the materials."""
+    spoken = "\n".join(_SPOKEN.findall(text))
+    return spoken, _SPOKEN.sub("", text)
+
+
+def spoken_names(texts: dict[str, tuple[str, bool]]) -> list[dict]:
+    """Names said in class: [{name, count, example, materials}], most frequent first.
+
+    texts maps a source id to (its Markdown, whether it is a lecture). A capitalised word said in
+    mid-sentence is a candidate, unless it is also used in lower case (an ordinary word) or is a day, a
+    month or the like. `materials` lists the sources outside speech (documents, books, slide text) that
+    contain it: a name there may be what the class was discussing rather than someone in the room. The
+    result is a proposal, read and cut by a person or the agent before it is saved."""
+    spoken, material = [], {}
+    for sid, (text, is_lecture) in texts.items():
+        if is_lecture:
+            said, rest = _split_session(text)
+            spoken.append(said)
+            material[sid] = rest
+        else:
+            material[sid] = text
+    said = "\n".join(spoken)
+    lower_words = set(re.findall(r"\b[a-z]{3,}\b", said)) | {w for t in material.values()
+                                                           for w in re.findall(r"\b[a-z]{3,}\b", t)}
+    lowered = {sid: t.lower() for sid, t in material.items()}
+    found: dict[str, dict] = {}
+    for m in _CANDIDATE.finditer(said):
+        words = [w for w in m.group(1).split() if w not in _NOT_NAMES and w.lower() not in lower_words]
+        if not words or (len(words) < len(m.group(1).split()) and len(words) != 1):
+            continue
+        name = " ".join(words)
+        e = found.get(name)
+        if e is None:
+            rx = re.compile(r"\b" + re.escape(name.lower()) + r"\b")
+            e = found[name] = {"name": name, "count": 0,
+                               "example": said[max(0, m.start() - 60): m.end() + 40].replace("\n", " "),
+                               "materials": [sid for sid, t in lowered.items() if rx.search(t)]}
+        e["count"] += 1
+    return sorted(found.values(), key=lambda e: (-e["count"], e["name"]))
+
+
+def text_names(cfg: dict) -> list[str]:
+    """Names to replace in text sent off the machine: privacy.names, and privacy.spoken_only (names said
+    in class that the materials also use, e.g. a student who shares a first name with a director on a
+    slide). Images are masked for privacy.names only, so the slide keeps the director's name."""
+    extra = [str(n) for n in ((cfg.get("privacy") or {}).get("spoken_only") or []) if str(n).strip()]
+    return names(cfg) + extra

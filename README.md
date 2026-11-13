@@ -97,6 +97,7 @@ tags: [finance]
 knowlib process -L DIR              # ingest new or changed material (resumable)
 knowlib status -L DIR               # live progress, from another shell
 knowlib qa -L DIR                   # every flag, for the QA pass
+knowlib names -L DIR                # names said in class, to keep off every model outside the machine
 knowlib pending -L DIR              # sources not yet synthesized into notes
 knowlib check-notes -L DIR          # citations, numbers, quotations, duplicates, consolidation
 knowlib review-notes -L DIR         # a second model judges every claim against its cited passages

@@ -424,6 +424,48 @@ def cmd_figures(args) -> int:
     return 0
 
 
+def cmd_names(args) -> int:
+    """Names said in class, as a proposal for privacy.names (only in speech) and privacy.spoken_only
+    (also in the materials: replaced in text, never masked out of a slide)."""
+    import re
+    import yaml
+    from . import privacy
+    from .models import config_path
+    lay, m = open_layout(_lib(args))
+    texts = {}
+    for sid, md in lay.all_sources(m.entries).items():
+        text = md.read_text(encoding="utf-8")
+        texts[sid] = (text, bool(re.search(r"^source_type: session$", text[:3000], re.M)))
+    found = privacy.spoken_names(texts)
+    cfg = load_config(_lib(args))
+    have = {n.lower() for n in privacy.text_names(cfg)}
+    skip = {n.lower() for n in (args.skip or [])}
+    for title, group in (("Only in speech (-> privacy.names)", [e for e in found if not e["materials"]]),
+                         ("Also in the materials (-> privacy.spoken_only)", [e for e in found if e["materials"]])):
+        print(f"\n{title}")
+        for e in group:
+            mark = " " if e["name"].lower() in have else ("-" if e["name"].lower() in skip else "+")
+            where = f"  [{', '.join(e['materials'][:2])}{', ...' if len(e['materials']) > 2 else ''}]" if e["materials"] else ""
+            print(f"{mark} {e['name']:<20} {e['count']:>3}x  ...{e['example'][:110]}...{where}")
+    new = [e for e in found if e["name"].lower() not in have | skip]
+    print(f"\n{len(found)} names said in class; {len(new)} to add (+), {len(skip)} skipped (-). "
+          "Leave out companies, places and what the materials discuss (--skip).")
+    if args.write and new:
+        path = config_path(_lib(args))
+        text = path.read_text(encoding="utf-8")
+        header = "".join(ln + "\n" for ln in text.splitlines() if ln.startswith("#"))
+        answers = yaml.safe_load(text) or {}
+        pv = answers.get("privacy") or {}
+        answers["privacy"] = pv
+        pv["names"] = list(pv.get("names") or []) + [e["name"] for e in new if not e["materials"]]
+        pv["spoken_only"] = list(pv.get("spoken_only") or []) + [e["name"] for e in new if e["materials"]]
+        shutil.copy2(path, path.with_suffix(".yaml.bak"))
+        path.write_text(header + ("\n" if header else "") +
+                        yaml.safe_dump(answers, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        print(f"added {len(new)} names to {path} (backup: {path.with_suffix('.yaml.bak').name})")
+    return 0
+
+
 def cmd_pending(args) -> int:
     print("\n".join(open_layout(_lib(args))[1].pending_synthesis()))
     return 0
@@ -548,6 +590,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--check", action="store_true", help="check every role, including image detail and context")
     s.set_defaults(fn=cmd_models)
     lib(sub.add_parser("pending")).set_defaults(fn=cmd_pending)
+    s = lib(sub.add_parser("names", help="names said in class: a proposal for privacy.names, to read and cut before --write"))
+    s.add_argument("--write", action="store_true", help="add the proposed names (minus --skip) to the config")
+    s.add_argument("--skip", nargs="*", help="names to leave out when writing")
+    s.set_defaults(fn=cmd_names)
     s = lib(sub.add_parser("mark-synthesized")); s.add_argument("ids", nargs="+"); s.set_defaults(fn=cmd_mark)
 
     args = p.parse_args(argv)

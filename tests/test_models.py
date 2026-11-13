@@ -338,3 +338,23 @@ def test_openrouter_data_policy_follows_the_library_privacy_setting():
     assert allow["provider_routing"]["data_collection"] == "allow"
     plain = {"backend": "openai", "base_url": "https://gpu.example/v1"}
     assert with_data_policy(plain, {"privacy": {"models_may_keep_data": True}}) == plain
+
+
+def test_names_said_in_class_are_proposed_with_where_the_materials_use_them():
+    from knowlib import privacy
+    lecture = ("---\nsource_type: session\n---\n## Slide 1\n**On slide:** Maria Elena Lagomasino, director\n"
+               "**Spoken:**\n[0:01] Okay, Nick, what do you think? And you, Maria? The answer is in the book.\n"
+               "[0:02] We read the article about Tim Cook. On Monday we meet again, Nick.\n")
+    book = "Chapter 1. Tim Cook said profits matter. The answer is clear."
+    got = {e["name"]: e for e in privacy.spoken_names({"lec": (lecture, True), "book": (book, False)})}
+    assert got["Nick"]["count"] == 2 and got["Nick"]["materials"] == []
+    assert got["Maria"]["materials"] == ["lec"]               # on the slide: text only, never masked
+    assert "Tim Cook" in got and got["Tim Cook"]["materials"] == ["book"]
+    assert "Monday" not in got and "The" not in got
+
+
+def test_spoken_only_names_are_replaced_in_text_but_not_masked_in_images():
+    from knowlib import privacy
+    cfg = {"privacy": {"names": ["Nick"], "spoken_only": ["Maria"]}}
+    assert privacy.names(cfg) == ["Nick"] and privacy.text_names(cfg) == ["Nick", "Maria"]
+    assert privacy.redact("Nick and Maria", privacy.text_names(cfg)) == "[a person] and [a person]"
