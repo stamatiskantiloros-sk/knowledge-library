@@ -145,20 +145,47 @@ It ingests anything new first. Other videos are skipped unless they match `--onl
 This is the text of `BRIEF_RULES`, which heads every brief.
 
 ```text
-You are writing the study book of one recorded lecture, for a student who will read it instead of watching.
+You are writing the study book of one recorded lecture: a synthesis of what was taught, for a student who will read it instead of attending. It follows the order in which the lecturer built the subject, but it is organised by idea, not by slide. The slides and what was said, below, are your sources, not your outline.
 
-1. Read every slide below in order, then write draft.md beside this brief: a # title, then ## sections in the order taught. The chapter breaks are yours.
-2. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
-3. Stay faithful. Keep the lecturer's definitions, examples and reasoning, and give a topic as much space as it got in class. Remove filler and repetition. Each topic appears once.
-4. Write only what the lecture contains: no links ahead, summaries or comments on the method. Attribute to the lecturer only what the transcript says. "What it shows" is an automatic description, never a source of claims.
-5. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said.
-6. If the lecturer says something wrong, keep it and add a note saying so, plainly.
-7. Add a note only where the student cannot follow without it: a line starting "> **Note (not from class):**", one or two sentences, naming its source. The passages below are the closest matches only: search all the course materials, listed at the end, for what the lecture leaves unclear, for conflicts with it, and to verify a note.
-8. Write [[slide N]] on its own line where the reader needs an image: charts, tables, diagrams, screens. Use LaTeX for formulas and Markdown tables, with the same number of cells in every row.
-9. End each section with its slides and times in italics. Call the speaker "the lecturer", without he or she.
+What the book is
+1. Read everything below first: every slide, everything said, the course-material passages. Then write draft.md beside this brief: a # title, then ## sections, one per idea or topic, in the order the lecture develops them. Slide boundaries decide nothing: a section can draw on several slides and minutes of speech, or on a single remark.
+2. Synthesise. Say what was taught as clearly and briefly as it can be said: its definitions, examples, reasoning and numbers. Merge what was said in several places, and make the connections between ideas explicit where the lecture implies them. Choose the form that serves understanding (a definition, a short worked example, a comparison table, a line on why it matters), not the form of the slide. Each idea appears once.
+3. Teach only what the lecture taught. No summaries of your own, no links ahead, no comments on the method; attribute to the lecturer only what the transcript says. "What it shows" is an automatic description of a slide, never a source of claims.
+
+Slides: text or picture, never both
+4. Show a slide (write [[slide N]] on its own line) only where its picture carries what words cannot do as well: a model, a chart, a process or flow diagram, a table of data. The text around it then adds only what the picture does not say: the point, and what the lecturer said about it. A slide that is a list, a definition or a statement is written into the text and not shown.
+5. Show each slide at its clearest: look at the slides before and after it, and pick the step where everything is visible and nothing covers it (not a dimmed build or a slide with an overlay); where a later slide repeats an earlier one and adds to it, show only the later one.
+6. Cite the slides. After a definition, figure or fact taken from a slide, add a short "(slide N)", sparingly: once per fact, not after every sentence. End each section with its sources in italics on a line of their own: *Slides 10–13*. Never write "on the slide", "the slide says" or "Slide:": the citation and the arrangement show where things come from.
+7. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
+
+Accuracy
+8. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said. Use LaTeX for formulas and Markdown tables with the same number of cells in every row.
+9. State things exactly as strongly as the source does: keep its hedges and its wording of degree ("that's a problem", not "it fails"; "can", "often", "may"). Do not upgrade an example into a rule or a reason into a definition.
+10. Keep the lecturer's scope and qualifiers. "In general X, but not when Y" stays that, never "not X". A remark about one setting (personal life, one company, one example) is not stretched to another (business, every company). A number stays with what it was said about: "7 or 8 of 10 decisions in personal life involve money" does not become a claim about decisions at work.
+11. Where the lecturer contradicts a slide, a course document or something said earlier (a grade weight that differs from the syllabus), give both, each with its source, and point the student to the document. Do not silently pick one.
+12. Leave out what is incomplete: a name, reference or point the recording lost or garbled is dropped, not reported with a note about the gap.
+13. If the lecturer says something wrong, keep it and add a note saying so, plainly.
+14. Add knowledge from outside the lecture only where a student would otherwise trip: a line starting "> **Note (not from class):**", one or two sentences, naming its source; for a book, also its page, from the `<!-- page N (pdf M) -->` line above the passage (N is the printed page). The passages below are the closest matches only: search all the course materials, listed at the end, to find and verify a note.
+15. A slide marked "Not discussed in the recording" was not taught in what was recorded: leave it out. Where a section cannot make sense without it, say in one line that it was shown but not discussed.
+
+People
+16. Call the speaker "the lecturer", without he or she.
+17. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point.
+18. Name no one in the room. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone there, even where the transcript or a slide shows one ([a person] marks a name taken out). Companies, organisations and public figures the lecture names are named.
+
+Style
+19. Be condensed: terse bullets, one idea each, fragments where they read well, short plain sentences elsewhere. No restating, no connective padding, no anecdotes or class chatter that carry no idea. Course admin only as far as a student must know it: grading, exam format and allowed aids, required readings, textbooks in one line. As a guide, about a third of the transcript's length or less (roughly 30 words per minute of lecture).
+20. Be simple, focused and precise. Name what the lecture names: companies, products, places, years and numbers; never blur them into stand-ins ("a truck maker", "big customers"). Plain words a student understands without decoding: no shorthand labels or symbols in place of words ("Pick:", "=" for "means").
+
+
+Check before finishing
+21. Check the draft claim by claim against its sources: for each claim find the transcript passage (its time) or the slide it comes from and read it again. Fix or remove anything the passage does not say, or says less strongly, more narrowly or about something else. Check every number with what it was said about, and every place the lecturer and a document disagree (rule 11).
+22. The finish step lists, under "To check" in review.md, sentences with absolute words (always, never, every, only, not...) whose source passage hedges. Reread each passage and fix the sentence, or leave it if the lecturer said it that strongly, then finish again.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>
 ```
+
+Rules 10, 11, 21 and 22 come from a reader's check of a finance lecture's handbook: the professor said 7 or 8 of 10 decisions involve money about personal life, and the draft had made it a claim about business; "markets are in general efficient, but not when people act irrationally" had become "the market is not efficient because people are not rational"; a grade weight said in class (20%) disagreed with the syllabus (30%) and the draft gave only one. Each was a qualifier, a scope or a second source dropped, which the number check cannot see, so the writer rereads every claim against its passage before finishing.
 
 The writer also produces `corrections.md`, listing each place an image overrode the ingested text. Any recalculation is run as code, not done mentally. During testing a mental sum wrongly suggested the slide's 55.6 was an error, and running it showed the slide was right.
 
@@ -176,6 +203,7 @@ It runs on every folder with both `.lecture.json` and `draft.md`, and can be rep
 | Table shape | Every row of a Markdown table has the same number of cells. | "a table has rows of different lengths" |
 | Lost tables | Numbers in a slide's Markdown table must be in the text or on a slide whose image is shown. | "table numbers not in the text" |
 | Images | Each `[[slide N]]` must be a real slide. | "marker for slide N has no image" |
+| Dropped hedges | A sentence with an absolute word (always, never, every, only, not...) and no hedge, whose closest source sentence among the slides the section cites (two or more shared words of five letters) hedges (in general, but, may, often...) and does not use that word. Noisy by design: a pointer for the writer to reread, not a finding. | "absolute claim, hedged source" with the passage's slide and time |
 
 Number comparison uses `numbers()` from `media/ocr.py`, which normalises Unicode, strips trailing punctuation and reads a comma as a decimal point.
 
@@ -303,14 +331,14 @@ A 95-minute lecture recorded as audio only, with a 65-slide deck, went through e
 - The review is section by section, one section or note per request: batching six notes per request caught 5 of 16 planted errors, one per request caught 12.
 - Names, emails and personal details are taken out of everything sent to a remote model and out of the book; the finish step checks the text and, by OCR, every image.
 - Condensing is its own pass, and is reviewed again: it reintroduced two overstatements the first review had fixed.
-- The flags worth acting on were nearly all overstatements: a hedge dropped, an example turned into a rule, a reason called a definition, a lecturer's addition credited to the slide. Rules 12–19 of the brief come from these and from the reader's notes: be condensed, let the layout show the source (never "on the slide"), plain words instead of shorthand labels, no stronger than the source, leave out what the recording lost rather than noting the gap, mute the class: students' answers in a round of guesses are not the lecturer's teaching (one draft had credited a student's suggestion to the lecturer as a "top priority"; the transcript showed the lecturer's own picks later).
+- The flags worth acting on were nearly all overstatements: a hedge dropped, an example turned into a rule, a reason called a definition, a lecturer's addition credited to the slide. Rules 6, 9, 12, 17, 19 and 20 of the brief come from these and from the reader's notes: be condensed, let the layout show the source (never "on the slide"), plain words instead of shorthand labels, no stronger than the source, leave out what the recording lost rather than noting the gap, mute the class: students' answers in a round of guesses are not the lecturer's teaching (one draft had credited a student's suggestion to the lecturer as a "top priority"; the transcript showed the lecturer's own picks later).
 
 **Length and layout**
 - About 2,700 words for 95 minutes of lecture read well: roughly 30 words per minute, a third of the transcript.
 - Page count is mostly layout: the same text took 22 pages with full-width slides and 8 in two columns with slides at column width. Showing several styles side by side, then a live palette and typeface picker on the chosen layout, made the choice easy.
-- Pick each slide image at its clearest: in the first draft five of 22 were a dimmed animation step, a slide with an overlay banner, or an earlier slide that a later one repeats and extends (brief rule 19).
+- Pick each slide image at its clearest: in the first draft five of 22 were a dimmed animation step, a slide with an overlay banner, or an earlier slide that a later one repeats and extends (brief rule 5).
 - The PDF is checked page by page: no slide split across pages, no text squeezed beside stacked slides, no near-empty last page, one typeface throughout. Justified columns need the page language declared, or Chrome does not hyphenate and leaves wide gaps.
-- Recording times are left out of captions and section endings when the reader does not need them (`show_times: false`); a byline goes once under the title, not on every page.
+- Recording times are left out of captions and section endings when the reader does not need them (`show_times: false`); only ranges of times (with a colon) are removed, so *Slides 13, 16–17* keeps its slides; a byline goes once under the title, not on every page.
 
 ## 17. Figures in the handbook's style
 

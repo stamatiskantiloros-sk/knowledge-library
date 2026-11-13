@@ -561,7 +561,7 @@ def test_the_brief_marks_undiscussed_slides_redacts_names_and_lists_the_notes(tm
     out = brief(lec, [], notes_dir=tmp_path / "notes", names=["Maria"])
     assert "Maria" not in out and "a@example.org" not in out and "[a person]" in out
     assert out.split("### Slide 2", 1)[1].count("Not discussed in the recording") == 1
-    assert "Topic notes built from these materials" in out and "16. Name no one in the room." in out
+    assert "Topic notes built from these materials" in out and "18. Name no one in the room." in out
 
 
 def test_finish_reports_personal_information_in_the_text_and_images(tmp_path, monkeypatch):
@@ -580,6 +580,27 @@ def test_captions_and_section_endings_can_leave_out_recording_times():
             "*Slides 54–55, 1:30:30–1:35:05 (recording ends at the break)*")
     assert without_times(text) == ("![Slide 2](assets/s.png)\n\nSlide 2\n\n*Slides 1–2*\n"
                                    "*Slides 54–55 (recording ends at the break)*")
+    assert without_times("*Slides 13, 16–17*") == "*Slides 13, 16–17*"        # a slide range is not a time
+    assert without_times("*Slides 13, 16–17, 07:24–11:05*") == "*Slides 13, 16–17*"
+
+
+def test_the_brief_asks_for_fidelity_and_a_claim_by_claim_check(tmp_path):
+    from knowlib.handbook.maker import Lecture, Slide, brief
+    rules = brief(Lecture("lec", "L/", "Lecture 1", tmp_path, [Slide(1, "0:00", "1:00", text="Title")]), []).split("## Slides")[0]
+    assert "Keep the lecturer's scope and qualifiers" in rules and "never \"not X\"" in rules
+    assert "give both, each with its source, and point the student to the document" in rules
+    assert "Check the draft claim by claim" in rules and rules.index("21. Check") < rules.index("When done")
+
+
+def test_finish_lists_absolute_claims_whose_source_hedges():
+    from knowlib.handbook.maker import Slide, dropped_hedges
+    slides = [Slide(3, "10:00", "12:00", spoken="[10:05] Markets are in general efficient, but not when people act irrationally."),
+              Slide(4, "12:00", "13:00", spoken="[12:10] Out of 10 decisions in your life, 8, 7 have to do with money.")]
+    draft = ("# T\n\n## Markets\n\n- The market is not efficient because people are not rational.\n"
+             "- Markets are efficient in general, unless people act irrationally.\n\n*Slides 3–4*\n")
+    got = dropped_hedges(draft, slides)
+    assert len(got) == 1 and "The market is not efficient" in got[0] and "slide 3, 10:05" in got[0]
+    assert dropped_hedges("# T\n\n## A\n\nThe market is never wrong.\n\n*Slides 9*\n", slides) == []   # no matching passage
 
 
 def test_the_brief_calls_the_speaker_what_the_library_asks(tmp_path):

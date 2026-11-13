@@ -77,19 +77,26 @@ Slides: text or picture, never both
 Accuracy
 8. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said. Use LaTeX for formulas and Markdown tables with the same number of cells in every row.
 9. State things exactly as strongly as the source does: keep its hedges and its wording of degree ("that's a problem", not "it fails"; "can", "often", "may"). Do not upgrade an example into a rule or a reason into a definition.
-10. Leave out what is incomplete: a name, reference or point the recording lost or garbled is dropped, not reported with a note about the gap.
-11. If the lecturer says something wrong, keep it and add a note saying so, plainly.
-12. Add knowledge from outside the lecture only where a student would otherwise trip: a line starting "> **Note (not from class):**", one or two sentences, naming its source; for a book, also its page, from the `<!-- page N (pdf M) -->` line above the passage (N is the printed page). The passages below are the closest matches only: search all the course materials, listed at the end, to find and verify a note.
-13. A slide marked "Not discussed in the recording" was not taught in what was recorded: leave it out. Where a section cannot make sense without it, say in one line that it was shown but not discussed.
+10. Keep the lecturer's scope and qualifiers. "In general X, but not when Y" stays that, never "not X". A remark about one setting (personal life, one company, one example) is not stretched to another (business, every company). A number stays with what it was said about: "7 or 8 of 10 decisions in personal life involve money" does not become a claim about decisions at work.
+11. Where the lecturer contradicts a slide, a course document or something said earlier (a grade weight that differs from the syllabus), give both, each with its source, and point the student to the document. Do not silently pick one.
+12. Leave out what is incomplete: a name, reference or point the recording lost or garbled is dropped, not reported with a note about the gap.
+13. If the lecturer says something wrong, keep it and add a note saying so, plainly.
+14. Add knowledge from outside the lecture only where a student would otherwise trip: a line starting "> **Note (not from class):**", one or two sentences, naming its source; for a book, also its page, from the `<!-- page N (pdf M) -->` line above the passage (N is the printed page). The passages below are the closest matches only: search all the course materials, listed at the end, to find and verify a note.
+15. A slide marked "Not discussed in the recording" was not taught in what was recorded: leave it out. Where a section cannot make sense without it, say in one line that it was shown but not discussed.
 
 People
-14. Call the speaker "the lecturer", without he or she.
-15. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point.
-16. Name no one in the room. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone there, even where the transcript or a slide shows one ([a person] marks a name taken out). Companies, organisations and public figures the lecture names are named.
+16. Call the speaker "the lecturer", without he or she.
+17. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point.
+18. Name no one in the room. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone there, even where the transcript or a slide shows one ([a person] marks a name taken out). Companies, organisations and public figures the lecture names are named.
 
 Style
-17. Be condensed: terse bullets, one idea each, fragments where they read well, short plain sentences elsewhere. No restating, no connective padding, no anecdotes or class chatter that carry no idea. Course admin only as far as a student must know it: grading, exam format and allowed aids, required readings, textbooks in one line. As a guide, about a third of the transcript's length or less (roughly 30 words per minute of lecture).
-18. Be simple, focused and precise. Name what the lecture names: companies, products, places, years and numbers; never blur them into stand-ins ("a truck maker", "big customers"). Plain words a student understands without decoding: no shorthand labels or symbols in place of words ("Pick:", "=" for "means").
+19. Be condensed: terse bullets, one idea each, fragments where they read well, short plain sentences elsewhere. No restating, no connective padding, no anecdotes or class chatter that carry no idea. Course admin only as far as a student must know it: grading, exam format and allowed aids, required readings, textbooks in one line. As a guide, about a third of the transcript's length or less (roughly 30 words per minute of lecture).
+20. Be simple, focused and precise. Name what the lecture names: companies, products, places, years and numbers; never blur them into stand-ins ("a truck maker", "big customers"). Plain words a student understands without decoding: no shorthand labels or symbols in place of words ("Pick:", "=" for "means").
+
+
+Check before finishing
+21. Check the draft claim by claim against its sources: for each claim find the transcript passage (its time) or the slide it comes from and read it again. Fix or remove anything the passage does not say, or says less strongly, more narrowly or about something else. Check every number with what it was said about, and every place the lecturer and a document disagree (rule 11).
+22. The finish step lists, under "To check" in review.md, sentences with absolute words (always, never, every, only, not...) whose source passage hedges. Reread each passage and fix the sentence, or leave it if the lecturer said it that strongly, then finish again.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>"""
 
@@ -671,6 +678,7 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     shown = draft + "\n".join(s.text for s in lecture.slides if f"[[slide {s.n}]]" in draft)   # a later build of the slide
     issues += [f"slide {s.n}: table numbers not in the text: {', '.join(lost)}" for s in lecture.slides
                if f"[[slide {s.n}]]" not in draft and (lost := missing_table_numbers(shown, s))]
+    issues += dropped_hedges(draft, lecture.slides)
     cfg = _library_config(folder)
     hb = cfg.get("handbook") or {}
     book = _place_figures(draft, lecture.slides, lecture, out, issues)
@@ -710,7 +718,56 @@ def without_times(text: str) -> str:
     text = re.sub(r"(!\[Slide \d+), [\d:]+\]", r"\1]", text)
     text = re.sub(r"^(Slide \d+), [\d:]+$", r"\1", text, flags=re.M)
     text = re.sub(r"^(Table: Slide \d+), [\d:]+$", r"\1", text, flags=re.M)
-    return re.sub(r"(\*Slides? [\d–, -]+?), [\d:]+–[\d:]+", r"\1", text)
+    time = r"\d{1,2}:\d{2}(?::\d{2})?"                    # 08:16 or 1:30:30; a slide range has no colon
+    return re.sub(rf"(\*Slides? [\d–, -]+?), {time}–{time}", r"\1", text)
+
+
+ABSOLUTE = re.compile(r"\b(always|never|every\w*|all|none|no one|nothing|only|must|cannot|can't|impossible|"
+                      r"entirely|completely|certainly|guaranteed|(?:is|are|was|were|does|do) not|isn't|aren't|doesn't|don't)\b", re.I)
+HEDGE = re.compile(r"\b(in general|generally|usually|often|mostly|most|may|might|can|could|sometimes|tends?|"
+                   r"typically|probably|likely|some|many|not always|except|unless|but|maybe|perhaps|almost|"
+                   r"roughly|about|around|if|when)\b", re.I)
+
+
+def _slides_of(section: str) -> set[int]:
+    """The slides a draft section cites: [[slide N]], (slide N) and its *Slides 10–13, 16* ending."""
+    cited = {int(a or b) for a, b in re.findall(r"\[\[slide (\d+)\]\]|\(slides? (\d+)", section, re.I)}
+    for line in re.findall(r"^\*Slides? ([^*]+)\*", section, re.M):
+        line = re.sub(r"\d{1,2}:\d{2}(?::\d{2})?", "", line)          # recording times, not slides
+        for a, b in re.findall(r"(\d+)(?:\s*[–-]\s*(\d+))?", line):
+            cited |= set(range(int(a), int(b or a) + 1))
+    return cited
+
+
+def dropped_hedges(draft: str, slides: list[Slide]) -> list[str]:
+    """Sentences of the draft with an absolute word (always, never, every, not...) whose closest source
+    sentence hedges and does not use that word: a scope or qualifier the draft may have lost. A cheap,
+    noisy check: each is a pointer for the writer to reread the passage, not a finding."""
+    by_n = {s.n: s for s in slides}
+    out = []
+    for section in re.split(r"^## ", draft, flags=re.M)[1:]:
+        cited = [by_n[n] for n in sorted(_slides_of(section)) if n in by_n] or slides
+        source = []                                       # (where, sentence)
+        for s in cited:
+            for line in f"{s.text}\n{s.spoken}".splitlines():
+                t = re.match(r"\s*\[([\d:]+)\]", line)
+                where = f"slide {s.n}, {t[1]}" if t else f"slide {s.n}"
+                source += [(where, x.strip()) for x in re.split(r"(?<=[.!?])\s+", re.sub(r"^\s*\[[\d:]+\]\s*", "", line)) if x.strip()]
+        for line in section.splitlines()[1:]:
+            if line.startswith(("> ", "|", "*Slide", "[[", "![")):
+                continue
+            for sent in re.split(r"(?<=[.!?])\s+", line.replace("**", "").lstrip("-* ").strip()):
+                word = ABSOLUTE.search(sent)
+                if not word or HEDGE.search(sent):
+                    continue
+                words = {w for w in re.findall(r"\w{5,}", sent.casefold())}
+                best = max(source, key=lambda ws: len(words & set(re.findall(r"\w{5,}", ws[1].casefold()))), default=None)
+                if not best or len(words & set(re.findall(r"\w{5,}", best[1].casefold()))) < 2:
+                    continue
+                if HEDGE.search(best[1]) and not re.search(rf"\b{re.escape(word[1])}\b", best[1], re.I):
+                    out.append(f"absolute claim, hedged source: \"{sent[:200]}\" ({best[0]}: \"{best[1][:200]}\"): "
+                               "reread the passage and keep its scope and qualifiers")
+    return out
 
 
 def personal_information(out: Path, cfg: dict, allow: list | None = None) -> list[str]:
