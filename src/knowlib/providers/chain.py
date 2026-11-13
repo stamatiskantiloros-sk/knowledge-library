@@ -33,9 +33,28 @@ MEMBER_KEYS = ("backend", "chain", "base_url", "openai_model", "api_key_env", "a
                "model", "ollama_model", "api_model", "agent_model")
 
 
+def key_slots(p: dict) -> list[dict]:
+    """The provider's keys that are present, as {api_key_env, api_key_file} each: its main key
+    (api_key_env / api_key_file), then each entry of `keys:` ({env: ..., file: ...}). An extra slot whose
+    key is neither in the environment nor in its file is left out, so a config can list slots to fill."""
+    import os
+    main = {"api_key_env": p.get("api_key_env"), "api_key_file": p.get("api_key_file")}
+    slots = [main]
+    for k in p.get("keys") or []:
+        k = {"env": k} if isinstance(k, str) else dict(k)
+        slot = {"api_key_env": k.get("env"), "api_key_file": k.get("file")}
+        has_env = bool(slot["api_key_env"] and os.environ.get(slot["api_key_env"]))
+        has_file = bool(slot["api_key_file"] and Path(slot["api_key_file"]).expanduser().exists())
+        if has_env or has_file:
+            slots.append(slot)
+    return slots
+
+
 def member_sections(section: dict, cfg: dict) -> list[dict]:
     """Each chain entry as {key, section, limits, tz, trains}: the provider's settings, then the
-    model's own, on top of the role's (max_tokens, reasoning_effort, ...)."""
+    model's own, on top of the role's (max_tokens, reasoning_effort, ...). A provider with several keys
+    gives one member per key, each with its own quota (<provider>/<model>#2, #3, ...), tried in order
+    before the next model."""
     providers = cfg.get("providers") or {}
     role = {k: v for k, v in section.items() if k not in MEMBER_KEYS}
     out = []
@@ -47,10 +66,16 @@ def member_sections(section: dict, cfg: dict) -> list[dict]:
         mconf = dict((p.get("models") or {}).get(model) or {})
         limits = {k: mconf.pop(k) for k in LIMIT_KEYS if k in mconf}
         fixed = bool(mconf.pop("fixed_image_tokens", False))
-        sec = {**role, **{k: v for k, v in p.items() if k not in ("models", "reset_tz", "trains_on_data")},
-               **mconf, "backend": "openai", "openai_model": model, "manage_lms": False}
-        out.append({"key": f"{name}/{model}", "section": sec, "limits": limits, "tz": p.get("reset_tz"),
-                    "trains": bool(p.get("trains_on_data")), "fixed_image_tokens": fixed})
+        base = {k: v for k, v in p.items() if k not in ("models", "reset_tz", "trains_on_data", "keys")}
+        for n, slot in enumerate(key_slots(p), 1):
+            # each slot uses only its own key: no falling back to the main key's variable or file
+            own = slot if n == 1 else {"api_key_env": slot["api_key_env"] or "KNOWLIB_NO_KEY",
+                                       "api_key_file": slot["api_key_file"]}
+            sec = {**role, **base, **own, **mconf,
+                   "backend": "openai", "openai_model": model, "manage_lms": False}
+            out.append({"key": f"{name}/{model}" + (f"#{n}" if n > 1 else ""), "section": sec, "limits": limits,
+                        "tz": p.get("reset_tz"), "trains": bool(p.get("trains_on_data")),
+                        "fixed_image_tokens": fixed})
     return out
 
 

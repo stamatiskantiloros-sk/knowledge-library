@@ -131,7 +131,7 @@ A provider spec is one of:
 - `server:<url>|<model>[|<env var with the key>]`, any OpenAI-compatible server;
 - `lmstudio:<model>`, a local server that knowlib loads and unloads;
 - `openrouter:<vendor>/<model>`, a model on OpenRouter (key in `OPENROUTER_API_KEY` or `~/.openrouter_key`). Requests go only to hosts that neither store nor train on prompts, and fail when the model has none, unless the library sets `privacy.models_may_keep_data: true`;
-- `chain:<provider>/<model>,...`, API models tried in order within their quotas (`openrouter/<vendor>/<model>` works here too);
+- `chain:<provider>/<model>,...`, API models tried in order within their quotas (`openrouter/<vendor>/<model>` works here too). A provider with several keys (`keys:` in `providers:`) gives each key its own place and quota in the chain;
 - `session:<model>`, a subagent of the agent session;
 - `default`.
 

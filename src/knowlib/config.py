@@ -141,6 +141,10 @@ DEFAULTS: dict[str, Any] = {
     },
     "providers": {
         # API providers that a role's chain can use (backend: chain, chain: [<provider>/<model>, ...]).
+        # A provider may hold more keys than its main one: keys: [{env: VAR, file: ~/.file}, "VAR2", ...].
+        # Each key present becomes its own chain member (<provider>/<model>#2, ...) with its own quota,
+        # tried before the next model; a slot whose key is missing is skipped. Quotas usually belong to an
+        # account or project, not a key: a second key of the same account adds nothing.
         # Limits are per model: rpm requests and tpm input tokens per minute, rpd requests per day,
         # context the model's window. Free-tier numbers change; a 429 reply teaches the real daily
         # limit, and `knowlib models` shows what is left today.

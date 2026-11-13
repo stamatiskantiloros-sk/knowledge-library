@@ -358,3 +358,22 @@ def test_spoken_only_names_are_replaced_in_text_but_not_masked_in_images():
     cfg = {"privacy": {"names": ["Nick"], "spoken_only": ["Maria"]}}
     assert privacy.names(cfg) == ["Nick"] and privacy.text_names(cfg) == ["Nick", "Maria"]
     assert privacy.redact("Nick and Maria", privacy.text_names(cfg)) == "[a person] and [a person]"
+
+
+def test_a_provider_with_several_keys_gives_one_chain_member_per_key(tmp_path, monkeypatch):
+    from knowlib.providers.chain import member_sections
+    from knowlib.providers.openai_compat import OpenAICompatProvider
+    second = tmp_path / "key2"
+    second.write_text("secret-two\n")
+    monkeypatch.setenv("P_KEY", "secret-one")
+    monkeypatch.setenv("P_KEY_3", "secret-three")
+    monkeypatch.delenv("P_KEY_4", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "not-this")
+    cfg = {"providers": {"p": {"base_url": "https://api.example/v1", "api_key_env": "P_KEY",
+                               "keys": [{"file": str(second)}, "P_KEY_3", {"env": "P_KEY_4"}],
+                               "models": {"a": {"rpd": 20}, "b": {}}}}}
+    ms = member_sections({"backend": "chain", "chain": ["p/a", "p/b"]}, cfg)
+    assert [m["key"] for m in ms] == ["p/a", "p/a#2", "p/a#3", "p/b", "p/b#2", "p/b#3"]   # the empty slot is left out
+    assert all(m["limits"] == {"rpd": 20} for m in ms[:3])                              # each key counts its own day
+    keys = [OpenAICompatProvider(m["section"]).api_key for m in ms[:3]]
+    assert keys == ["secret-one", "secret-two", "secret-three"]                        # never the main key twice
