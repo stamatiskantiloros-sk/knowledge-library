@@ -39,8 +39,13 @@ ROLES = {
 }
 SESSION_MODELS = ("haiku", "sonnet", "opus")
 LMSTUDIO_URL = "http://localhost:1234/v1"
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+# OpenRouter routes a request to one of several hosts of a model. "deny" keeps it to hosts that do not
+# store or train on what they are sent; requests fail rather than fall back to one that does.
+OPENROUTER_ROUTING = {"data_collection": "deny"}
 PROVIDER_KEYS = ("backend", "base_url", "openai_model", "api_key_env", "manage_lms", "agent_model", "model",
-                 "ollama_model", "api_model", "context_length", "parallel", "chain", "api_key_file")
+                 "ollama_model", "api_model", "context_length", "parallel", "chain", "api_key_file",
+                 "provider_routing")
 COMMANDS = {"process": ["reading"], "reprocess": ["reading"], "digest": ["digest"], "review-notes": ["review"],
             "handbook": ["reading", "handbook"]}
 
@@ -75,6 +80,8 @@ def describe(sec: dict) -> str:
             return f"LM Studio: {sec.get('openai_model')}"
         from urllib.parse import urlparse
         host = urlparse(sec.get("base_url", "")).netloc or sec.get("base_url", "")
+        if host == "openrouter.ai":
+            return f"OpenRouter: {sec.get('openai_model')}"
         return f"server {host}: {sec.get('openai_model')}"
     if b == "ollama":
         return f"Ollama: {sec.get('ollama_model')}"
@@ -93,7 +100,7 @@ def summary(cfg: dict, roles=ROLES) -> dict[str, str]:
 
 def parse_spec(spec: str) -> dict | None:
     """'session:sonnet' | 'lmstudio:<model>' | 'server:<base_url>|<model>[|<key env var>]' |
-    'chain:<provider>/<model>,<provider>/<model>,...' | 'default'."""
+    'openrouter:<vendor>/<model>' | 'chain:<provider>/<model>,<provider>/<model>,...' | 'default'."""
     kind, _, rest = spec.partition(":")
     if kind == "default":
         return None
@@ -118,7 +125,13 @@ def parse_spec(spec: str) -> dict | None:
         if len(parts) > 2 and parts[2]:
             sec["api_key_env"] = parts[2]
         return sec
-    raise ValueError(f"unknown provider {spec!r}: use session:, lmstudio:, server:, chain: or default")
+    if kind == "openrouter":
+        if "/" not in rest:
+            raise ValueError("openrouter:<vendor>/<model>, as OpenRouter lists it")
+        return {"backend": "openai", "base_url": OPENROUTER_URL, "openai_model": rest, "manage_lms": False,
+                "api_key_env": "OPENROUTER_API_KEY", "api_key_file": "~/.openrouter_key",
+                "provider_routing": dict(OPENROUTER_ROUTING)}
+    raise ValueError(f"unknown provider {spec!r}: use session:, lmstudio:, server:, openrouter:, chain: or default")
 
 
 def _clear(d: dict) -> dict:
@@ -257,13 +270,14 @@ def _check_server(sec: dict, role: str, cfg: dict, *, full: bool) -> tuple[bool,
         return False, f"{base} does not answer: {e}{hint}"
     model = next((m for m in listed if _bare(m.get("id")) == _bare(sec.get("openai_model"))), None)
     if model is None:
-        return False, f"{base} does not serve {sec.get('openai_model')} (it has: " \
-                      f"{', '.join(m.get('id', '?') for m in listed) or 'nothing'})"
+        ids = [m.get("id", "?") for m in listed]
+        shown = ", ".join(ids[:15]) + (f", ... ({len(ids)} in all)" if len(ids) > 15 else "")
+        return False, f"{base} does not serve {sec.get('openai_model')} (it has: {shown or 'nothing'})"
     notes = []
     mods = (model.get("architecture") or {}).get("input_modalities")
     if role == "reading" and mods and "image" not in mods:
         return False, f"{sec.get('openai_model')} does not take images"
-    n_ctx = (model.get("meta") or {}).get("n_ctx")
+    n_ctx = (model.get("meta") or {}).get("n_ctx") or model.get("context_length")   # llama.cpp | OpenRouter
     if full and role == "digest" and n_ctx:
         need = int(int(cfg["digest"].get("max_chars", 120000)) / 3.5 + int(cfg["digest"].get("max_tokens", 8000)))
         if n_ctx < need:
@@ -343,7 +357,8 @@ def choose(cfg: dict) -> dict[str, dict | None]:
                         and not section(cfg, r).get("manage_lms")), {})
     for role, what in ROLES.items():
         print(f"\n{role} ({what}): now {describe(section(cfg, role))}")
-        print("  Enter keeps it; or 1 a model server, 2 LM Studio on this machine, 3 Claude in the session, 4 default")
+        print("  Enter keeps it; or 1 a model server, 2 LM Studio on this machine, 3 Claude in the session, "
+              "4 default, 5 OpenRouter")
         pick = _ask("  choice")
         if pick == "1":
             url = _ask("  server URL (OpenAI-compatible, ending in /v1)", last_server.get("base_url", ""))
@@ -375,6 +390,12 @@ def choose(cfg: dict) -> dict[str, dict | None]:
             changes[role] = parse_spec(f"session:{m}")
         elif pick == "4":
             changes[role] = None
+        elif pick == "5":
+            m = _ask("  OpenRouter model id (<vendor>/<model>, from openrouter.ai/models)")
+            if m:
+                changes[role] = parse_spec(f"openrouter:{m}")
+                if not (os.environ.get("OPENROUTER_API_KEY") or Path("~/.openrouter_key").expanduser().exists()):
+                    print("  set OPENROUTER_API_KEY or put the key in ~/.openrouter_key before the run")
     return changes
 
 

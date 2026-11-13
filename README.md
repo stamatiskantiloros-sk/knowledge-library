@@ -56,7 +56,7 @@ knowlib models -L ~/Documents/MyCourse --check
 **Models.** knowlib needs a vision model for reading and a text model for digests. Any of these will do:
 - an OpenAI-compatible server, local or remote;
 - an in-process backend;
-- an API model through LiteLLM;
+- an API model through LiteLLM, or any model on OpenRouter (`openrouter:<vendor>/<model>`);
 - subagents of an agent session.
 
 Speech-to-text runs locally. Choose models by testing them on your own material (see [Model roles](#model-roles)).
@@ -129,7 +129,8 @@ knowlib models -L DIR --check                            # served, takes images,
 A provider spec is one of:
 - `server:<url>|<model>[|<env var with the key>]`, any OpenAI-compatible server;
 - `lmstudio:<model>`, a local server that knowlib loads and unloads;
-- `chain:<provider>/<model>,...`, API models tried in order within their quotas;
+- `openrouter:<vendor>/<model>`, a model on OpenRouter (key in `OPENROUTER_API_KEY` or `~/.openrouter_key`). Requests go only to hosts that neither store nor train on prompts, and fail when the model has none;
+- `chain:<provider>/<model>,...`, API models tried in order within their quotas (`openrouter/<vendor>/<model>` works here too);
 - `session:<model>`, a subagent of the agent session;
 - `default`.
 

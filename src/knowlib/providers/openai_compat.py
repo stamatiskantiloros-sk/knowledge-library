@@ -75,6 +75,7 @@ class OpenAICompatProvider(VisionProvider):
         self.parallel = section.get("parallel")                # slots share the memory; we send one at a time
         self.reasoning_effort = section.get("reasoning_effort")   # "none" skips the model's reasoning
         self.memory_check = section.get("memory_check", True)     # with manage_lms: refuse a model that will not fit
+        self.routing = section.get("provider_routing")            # OpenRouter's `provider` preferences
         self._loaded = False
         self.last_finish = None
 
@@ -156,6 +157,8 @@ class OpenAICompatProvider(VisionProvider):
         only bounds each socket read, so a server that keeps the connection open without finishing
         could hold the run for hours. A request past the deadline raises TimeoutError (an OSError,
         which callers treat as a server failure); its thread is left to finish on its own."""
+        if self.routing:
+            body = {**body, "provider": self.routing}
         req = urllib.request.Request(f"{self.base_url}/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json",
                                               "Authorization": f"Bearer {self.api_key}"})

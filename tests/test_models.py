@@ -28,6 +28,7 @@ class Server:
 
     def __init__(self, models_list, capped=False):
         self.models_list, self.capped = models_list, capped
+        self.requests: list[dict] = []
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -47,6 +48,7 @@ class Server:
 
             def do_POST(self):
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                outer.requests.append(req)
                 tokens = 10
                 for part in req["messages"][0]["content"]:
                     if part.get("type") == "image_url":
@@ -237,3 +239,42 @@ def test_the_writers_model_may_not_review_and_its_family_is_a_warning(tmp_path):
     assert models.writer_conflict(load_config(root))[0] == "warning"
     models.save(root, {"review": models.parse_spec("chain:g/gemini-3.5-flash-lite")})
     assert models.writer_conflict(load_config(root)) is None
+
+
+def test_openrouter_spec_routes_only_to_hosts_that_keep_nothing(tmp_path, monkeypatch):
+    sec = models.parse_spec("openrouter:vendor/vlm")
+    assert sec["base_url"] == models.OPENROUTER_URL and sec["openai_model"] == "vendor/vlm"
+    assert sec["api_key_env"] == "OPENROUTER_API_KEY"
+    assert sec["provider_routing"] == {"data_collection": "deny"}
+    assert models.describe(sec) == "OpenRouter: vendor/vlm"
+    with pytest.raises(ValueError):
+        models.parse_spec("openrouter:vlm")
+    root = library(tmp_path)
+    models.save(root, {"review": sec})
+    cfg = load_config(root)
+    assert models.summary(cfg)["review"] == "OpenRouter: vendor/vlm"
+    assert models.check(load_config(root, {"local_only": True}), "review")[0] is False
+    # the routing preference goes out with every request; the model's context comes from context_length
+    srv = Server([{"id": "vendor/vlm", "context_length": 200000,
+                   "architecture": {"input_modalities": ["text", "image"]}}])
+    try:
+        from knowlib.providers.openai_compat import OpenAICompatProvider
+        prov = OpenAICompatProvider({**sec, "base_url": srv.url})
+        assert prov.generate([], "hi") == "ok"
+        assert srv.requests[-1]["provider"] == {"data_collection": "deny"}
+        ok, msg = models._check_server({**sec, "base_url": srv.url}, "review", cfg, full=False)
+        assert ok and "context 200000" in msg
+    finally:
+        srv.close()
+    # switching the role to another provider drops the routing preference
+    models.save(root, {"review": models.parse_spec("session:opus")})
+    assert "provider_routing" not in load_config(root)["notes_review"]
+
+
+def test_openrouter_models_in_a_chain_keep_the_vendor_in_the_model_id():
+    from knowlib.config import DEFAULTS
+    from knowlib.providers.chain import member_sections
+    (m,) = member_sections({"backend": "chain", "chain": ["openrouter/vendor/model-x"]}, DEFAULTS)
+    assert m["key"] == "openrouter/vendor/model-x"
+    assert m["section"]["openai_model"] == "vendor/model-x"
+    assert m["section"]["provider_routing"] == {"data_collection": "deny"} and not m["trains"]

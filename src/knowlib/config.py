@@ -166,6 +166,27 @@ DEFAULTS: dict[str, Any] = {
                                        "reasoning_effort": None},
             },
         },
+        "openrouter": {
+            # openrouter.ai: one key for models of many vendors, paid per token (a few are free). Name a
+            # model by OpenRouter's id after the provider: chain: [openrouter/<vendor>/<model>, ...].
+            # data_collection: deny routes only to hosts that neither store nor train on prompts.
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key_env": "OPENROUTER_API_KEY",
+            "api_key_file": "~/.openrouter_key",
+            # With deny, a model whose only host trains on prompts fails with 404 ("No endpoints found
+            # matching your data policy") instead of being sent anyway; in November 2026 that ruled out
+            # NVIDIA's free endpoints. Free (":free") models share 20 requests a minute and 50 a day per
+            # account (1,000 a day once 10 credits have been bought): the rpd below is the account's.
+            "provider_routing": {"data_collection": "deny"},
+            "timeout_s": 600,
+            "models": {
+                # Read 8 dense lecture slides (charts, a 12-person board, a bond chart) with no wrong value.
+                "dots-studio/dots-3-note-preview:free": {"rpm": 20, "rpd": 50, "context": 512000},
+                # Fast, 1M context, text only. As a reviewer it caught a dropped hedge but missed a dropped
+                # scope ("in general efficient"): use it for leads, not verdicts.
+                "baidu/ernie-5.5-flash-preview:free": {"rpm": 20, "rpd": 50, "context": 1024000},
+            },
+        },
         "nvidia": {
             # build.nvidia.com: free for development, rate-limited (about 40 requests a minute), no daily
             # quota published. Requests queue: a minute or more is normal, and a request still running
