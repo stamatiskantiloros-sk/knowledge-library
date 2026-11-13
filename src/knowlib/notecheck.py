@@ -127,15 +127,22 @@ def citations(line: str) -> list[tuple[str, str]]:
 def claims(note: Note) -> list[tuple[str, str]]:
     """(section, line) for every claim: list items and paragraphs under a ## heading, except Related.
     The summary before the first ## heading restates cited points and is not checked."""
-    out, section = [], None
+    out, section, joinable = [], None, False
     for line in note.body.splitlines():
         if line.startswith("## "):
-            section = line[3:].strip()
+            section, joinable = line[3:].strip(), False
             continue
         text = line.strip()
         if section is None or section.lower().startswith("related") or not text or text.startswith(("#", "|", "```", ">")):
+            joinable = False
+            continue
+        # a display formula, or the "where" that introduces its terms, belongs to the claim it sits in:
+        # a block cited once, on its last line, is one claim
+        if joinable and (text.startswith("$$") or re.fullmatch(r"where:?", text, re.I)):
+            out[-1] = (section, out[-1][1] + " " + text)
             continue
         out.append((section, re.sub(r"^([-*]|\d+\.)\s+", "", text)))
+        joinable = True
     return out
 
 
@@ -155,7 +162,9 @@ class Source:
         self.slides: dict[int, tuple[str, float | None, float | None]] = {}
         for m in re.finditer(r"^## Slide (\d+)\b[^\n]*", self.text, re.M):
             span = re.search(r"\(([\d:]+)[–-]([\d:]+)\)", m[0])
-            end = self.text.find("\n## ", m.end())
+            # a slide runs to the next slide (its own text may hold "## " headings), or to the end matter
+            nxt = re.search(r"^## (?:Slide \d+\b|Dropped frames|Page renders|Transcript|Unmatched)", self.text[m.end():], re.M)
+            end = m.end() + nxt.start() if nxt else -1
             self.slides[int(m[1])] = (self.text[m.start():end if end > 0 else None],
                                       seconds(span[1]) if span else None, seconds(span[2]) if span else None)
         self.normed = norm(self.text)

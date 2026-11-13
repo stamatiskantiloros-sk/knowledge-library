@@ -206,3 +206,24 @@ def test_reviewer_is_configured_like_any_model():
     assert (s["openai_model"], s["context_length"]) == ("other-family", 32768)  # notes_review wins
     s = reviewer_section(deep_merge(cfg, {"notes_review": {"backend": "agent", "agent_model": "sonnet"}}))
     assert (s["backend"], s["agent_model"]) == ("agent", "sonnet")
+
+
+def test_a_slide_runs_past_the_headings_of_its_own_text(tmp_path):
+    md = tmp_path / "lecture.md"
+    md.write_text("---\nid: x\n---\n# Lecture\n\n## Slide 7 (39:03–1:13:55)\n**On slide:**\n\n## Three Core Decisions\n"
+                  "- Investment\n\n**Spoken:**\n\n[48:38] Out of 10 decision, 8, 7 has to do with money.\n\n"
+                  "## Slide 8 (1:13:55–1:47:01)\n**Spoken:**\n[1:14:00] Next.\n\n## Page renders\nnothing\n")
+    src = Source(md, "x")
+    text, problem = src.region("slide 7, 48:38")
+    assert not problem and "8, 7 has to do with money" in text and "Next." not in text
+    assert "nothing" not in src.region("slide 8")[0]
+
+
+def test_a_formula_block_cited_on_its_last_line_is_one_claim():
+    from knowlib.notecheck import Note, claims
+    body = ("## Key points\nThe cash conversion cycle is the time from paying for inventory to collecting cash [@b, p. 1].\n"
+            "$$CCC = AR + INV - AP$$\nwhere\n$$AR = \\\\frac{A}{S}$$ [@b, p. 2].\n\n$$X = 1$$\n")
+    note = Note.__new__(Note)
+    note.body = body
+    got = claims(note)
+    assert len(got) == 2 and got[0][1].endswith("[@b, p. 2].") and got[1][1] == "$$X = 1$$"
