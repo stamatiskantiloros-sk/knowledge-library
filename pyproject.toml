@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "knowlib"
 version = "0.1.0"
-description = "Turns a folder of documents, web pages, audio and video into a Markdown knowledge library for agents"
+description = "Turns documents, books, web pages, audio and lectures into a cited Markdown knowledge library and study handbooks, with every output checked by something that did not produce it"
 requires-python = ">=3.11"
 dependencies = [
   "pyyaml>=6",
@@ -19,11 +19,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Apple Silicon defaults: local Whisper and vision model on the GPU, Apple Vision OCR
+# macOS: in-process speech-to-text, vision models and the system OCR
 mac = ["mlx-whisper>=0.4.3", "mlx-vlm>=0.3.5", "ocrmac>=1.0", "torchvision"]
 docs = ["docling>=2.0", "python-pptx>=1.0", "pymupdf4llm>=0.0.17"]
 api = ["litellm>=1.50"]
-linux = ["faster-whisper>=1.0"]
+linux = ["faster-whisper>=1.0"]                 # Linux: speech-to-text
 figures = ["matplotlib>=3.8", "vl-convert-python>=1.6"]   # charts for `knowlib figures`
 dev = ["pytest>=8"]
 

@@ -21,7 +21,8 @@ Requirements, in order of priority:
 These came from testing. Section 12 gives the evidence.
 
 - **The lecture is the spine.** Course materials never set the structure or the content of the body.
-- **Different models for different jobs.** A local model reads video. The best available model writes and checks.
+- **Different models for different jobs.** A fast model reads video. The strongest available model writes. A model of another family reviews, and the strongest judges each of its flags.
+- **Nothing grades itself.** Every sentence, number, table and figure is checked by something that did not produce it: code, the original image or transcript, a second model or the user. See [adversarial-review.md](adversarial-review.md).
 - **The image outranks the text.** Machine readings of slides are drafts, and the frame decides.
 - **Code checks what code can check.** Numbers, table shapes and quotes are verified mechanically. The writer's own confidence is not evidence.
 - **Keep the lecturer's words, even when wrong.** An error stays in the text and gets a labelled note.
@@ -35,34 +36,35 @@ These came from testing. Section 12 gives the evidence.
                             ├─ 1. INGEST (local) ──> sources/<id>/source.md + frames
  PDFs, web, office, books ──┘                                  │
                                                                │
- books only: 1b. DIGEST (local 9B, once) ──> digest.md         │
+ books only: 1b. DIGEST (fast model, once) ──> digest.md       │
                                                                ▼
                             2. PREPARE (knowlib) ──> <output>/<lecture>/brief.md
                                                                │
-                            3. WRITE (Opus, in a Claude Code session)
+                            3. WRITE (strongest model, as an agent)
                                reads brief, frames, materials
                                writes draft.md + corrections.md
                                                                │
-                            4. FINISH (knowlib) ──> handbook.md, review.md, handbook.pdf
+                            4. FINISH (knowlib) ──> handbook.md, review.md, <title> - <date>.pdf
                                                                │
-                            5. Resolve "To check", finish again
+                            5. Resolve "To check"; optional review by another model
+                               family, section by section; finish again
 ```
 
 | Stage | Who runs it | Where | Cost |
 |---|---|---|---|
 | Ingest | knowlib, fast and strong models | Local | Time only |
-| Digest (books) | Fast local model, or a Sonnet subagent | Local, or session | About 30 minutes per 100 pages locally |
+| Digest (books) | Fast model, or a session subagent | Local, or session | About 30 minutes per 100 pages with a small local model |
 | Prepare | knowlib | Local | Seconds, plus any new ingestion |
-| Write | Opus 5.5 agent | Session | Subscription limits |
+| Write | The strongest available model, as an agent | Agent session | Session limits |
 | Finish | knowlib | Local | Seconds |
 
-No API key is needed. Writing needs someone to start it in a session, so it does not run unattended as ingestion does. An unattended version would call the Anthropic API through the same brief; estimated cost is under $1 for a five-minute lecture, $2–5 for 90 minutes, and $50–150 for a 24-hour course, at $4 / $20 per million tokens. These are estimates, not measurements.
+No API key is needed. Writing needs someone to start it in a session, so it does not run unattended as ingestion does. An unattended version would call an API model through the same brief, at a cost that grows with the lecture's length.
 
 ## 4. Stage 1: ingestion
 
 Ingestion belongs to knowlib and knows nothing about handbooks. Its only contract with the handbook is `source.md` (section 5).
 
-**Models.** An OpenAI-compatible local server (LM Studio here, at `http://localhost:1234/v1`) serves two vision models, and knowlib loads and unloads them with the `lms` CLI (`manage_lms: true`). One model is in memory at a time, so ordinary laptops can run it.
+**Models.** An OpenAI-compatible server serves two vision models. With `manage_lms: true` knowlib loads and unloads them, so only one is in memory at a time and ordinary hardware can run it.
 
 - **Fast model:** decides keep or drop. Each dropped frame is listed at the end of `source.md` with a thumbnail and the model's reason.
 - **Strong model:** reads frames and captions the hard slides. Tested with a 16K context, `parallel: 1` and a 450 s timeout.
@@ -71,7 +73,7 @@ Exact model ids live in `config.yaml`. Choose models by testing them on your own
 
 **Lecture steps:**
 
-1. Transcript: the lecture's own `.srt`/`.vtt` if present, otherwise Whisper (`mlx-community/whisper-large-v3-turbo`).
+1. Transcript: the lecture's own `.srt`/`.vtt` if present, otherwise local speech-to-text.
 2. Frames at 1 fps with ffmpeg at native resolution.
 3. Group frames by pHash (threshold 6) with SSIM as a backup check (0.985).
 4. The fast model decides keep or drop for every group, before any reading. The prompt asks only whether a frame has content, and says samples are expected to look alike.
@@ -80,13 +82,13 @@ Exact model ids live in `config.yaml`. Choose models by testing them on your own
 7. OCR cross-check with Apple Vision and Tesseract. A slide is flagged only when both disagree with the model.
 8. Captions: the strong model for every slide in the tested library (`caption_model_types: all`). The generic default gives it only tables, charts, Markdown tables and flagged slides, and the fast model the rest. A stalled strong model falls back to the fast model. Before the strong model loads, knowlib checks it fits in free memory and stops with the names of the largest apps if it does not.
 
-**Session reader (optional).** `knowlib process --reader session` replaces the strong model with subagents in a Claude Code session, with no API key. Frame decisions stay local. Reading then runs in passes: knowlib lists its jobs in `.work/agent/jobs.json` and stops, subagents write one answer file per job, and the next run continues. Sonnet reads tables, charts, code, whiteboards, diagrams and demos, Haiku reads the rest, and Sonnet writes the hard captions. On 11 test frames Sonnet matched or beat the strong local model, and Haiku missed one chart axis. On a real 3:42 lecture with 26 frame groups, reading and captions took a few minutes against an expected hour or more. It has been tested on that one lecture. It uses subscription limits and sends frames to Anthropic, so `local_only` refuses it.
+**Session reader (optional).** `knowlib process --reader session` replaces the strong model with subagents of an agent session, with no API key. Frame decisions stay local. Reading then runs in passes: knowlib lists its jobs in `.work/agent/jobs.json` and stops, subagents write one answer file per job, and the next run continues. A stronger session model reads tables, charts, code, whiteboards, diagrams and demos and writes the hard captions; a smaller one reads the rest. On 11 test frames the stronger one matched or beat the strong local model, and the smaller one missed one chart axis. On a real 3:42 lecture with 26 frame groups, reading and captions took a few minutes against an expected hour or more. It sends frames off the machine, so `local_only` refuses it.
 
 **Other materials** go through the pdf, office, web and text ingestors. PDF uses Docling with PyMuPDF as a fallback.
 
 **Directories.** `knowlib process --input <folder> --layout "{course}/{date}/{name}"` ingests any folder. Fields: `course`, `folder`, `name`, `date`. The layout is a tree of symlinks in `organized/`. Real data stays in `sources/`, so changing the layout breaks no citation and needs no reprocessing. Keys from `--input` carry the folder name, so same-named files in different courses stay apart.
 
-**Speed.** Time follows the slide count, not the video length: on the test machine, about 4–4.5 minutes per slide. A slide-based 5.5-minute lecture took 72 minutes, and a screen recording of 7.7 minutes took 4.6 hours, because it held four times the slides.
+**Speed.** With local models, time follows the slide count, not the video length: about 4–4.5 minutes per slide in testing. A slide-based 5.5-minute lecture took 72 minutes, and a screen recording of 7.7 minutes took 4.6 hours, because it held four times the slides.
 
 ## 5. The contract: source.md
 
@@ -211,7 +213,7 @@ It then writes:
 
 - `handbook.md`: the draft with `[[slide N]]` replaced by images copied into `assets/`.
 - `review.md`: To check, Corrections made from the images, Slides the OCR check flagged.
-- `handbook.pdf`: pandoc produces standalone HTML with MathML, and headless Chrome prints it. Chrome is at `/Applications/Google Chrome.app`. WeasyPrint is not used because it does not render MathML.
+- the PDF, named after the lecture and its date (section 19): pandoc produces standalone HTML with MathML, and headless Chrome or Chromium prints it. WeasyPrint is not used because it does not render MathML.
 
 ## 9. Output layout
 
@@ -219,7 +221,7 @@ It then writes:
 <target>/<lecture-slug>/
   brief.md  .lecture.json        input to the writer
   draft.md  corrections.md       written by the agent
-  handbook.md  handbook.pdf      the book
+  handbook.md  <title> - <date>.pdf   the book
   review.md                      what to check, what was corrected
   assets/                        images the book uses
 ```
@@ -228,34 +230,32 @@ A planned standard setup is one folder per course holding materials and lectures
 
 ## 10. Digest for books
 
-Whole books are too long to pass to Opus for each lecture, and search alone can miss a concept named differently from the lecture. `knowlib digest` writes `sources/<id>/digest.md` once per book; the brief lists it beside the book.
+Whole books are too long to pass to the writer for each lecture, and search alone can miss a concept named differently from the lecture. `knowlib digest` writes `sources/<id>/digest.md` once per book; the brief lists it beside the book.
 
 1. **Trigger:** a PDF of 100 pages or more (`digest.min_pages`) whose ingestion found an outline.
 2. **From the PDF itself, exact:** the contents and the list of tables and figures, with printed page numbers, from `assets/outline.json`. Ingestion marks every page `<!-- page N (pdf M) -->` with the book's own page label.
-3. **From a model, one part at a time:** key terms, formulas and worked examples, each with its page. A part is a chapter, split at its sections when longer than 120,000 characters (about 30K tokens), so the fast 9B model reads it at 64K context.
-4. **Loops:** a reply that repeats the same items three times or more is a loop. The repeats are dropped. With `fallback_model` set (Qwopus in the library, at 32K context with reasoning off), that part is read again once the 9B has finished the book and been unloaded, in pieces of 60,000 characters, and the replies are merged under the three headings. A part that still loops carries a warning to search the book. If the fallback cannot load or stalls, the first reply is kept with its warning.
+3. **From a model, one part at a time:** key terms, formulas and worked examples, each with its page. A part is a chapter, split at its sections when longer than 120,000 characters (about 30K tokens), so a fast model with a moderate context can read it.
+4. **Loops:** a reply that repeats the same items three times or more is a loop. The repeats are dropped. With `fallback_model` set (a stronger model, with reasoning off), that part is read again once the fast model has finished the book and been unloaded, in pieces of 60,000 characters, and the replies are merged under the three headings. A part that still loops carries a warning to search the book. If the fallback cannot load or stalls, the first reply is kept with its warning.
 5. **Checks:** items citing a page outside their part are marked ⚠.
 6. **Reuse:** replies are cached in `.work/digest/`, and the hash of `source.md` decides when to redo the digest.
-7. **Use:** Opus finds pages in the digest, then reads them in `source.md`. A note cites the book and its printed page, never the digest.
+7. **Use:** the writer finds pages in the digest, then reads them in `source.md`. A note cites the book and its printed page, never the digest.
 
-`--reader session` hands the parts to a Sonnet subagent instead, never for `local_only` material.
+`--reader session` hands the parts to a session subagent instead, never for `local_only` material.
 
-**Test book:** Damodaran, *Applied Corporate Finance* (4th ed.), 654 pages.
-- Ingestion with Docling took 8.4 minutes. It found 422 formulas; all were filled from the text layer, which keeps the symbols but not fractions or sub- and superscripts.
-- The 9B digest took 3 h 23 min (about 30 minutes per 100 pages).
-- Page accuracy, measured by finding each item's name on its cited page: in chapter 3, 26 of 30 items were on the page and 4 one page off; in chapter 8 part 1, 128 of 133 on the page and 5 one off.
-- Loops: the 9B looped on 7 of the 29 parts, each time running to the 8,000-token limit, while the longest healthy reply was about 2,000 tokens. Qwopus reread the 7 in 12 pieces in 2 h 14 min, with no loops left.
-- Page accuracy across the book: Qwopus's rereads put 249 of 253 items (98%) on the cited page; the 9B's other parts, 400 of 460 (87%), most of the rest one page off. Qwopus also found more per part: 51 items for chapter 10 against 13–26 for a typical 9B part.
-- Qwopus reasoning: on half of chapter 10, thinking took 76% of the output (4,870 of 6,379 tokens) and 31 minutes. With `reasoning_effort: none` it took 15 minutes and gave 41 items, all on the right page, against 31.
-- Qwopus on a second, Linux machine over the network (Q4_K_M at 71K context) had not finished a whole part after an hour, so it is slower than the Mac for this model and is not used.
-- Every prompt names its part as "part X of N", so re-splitting the book changed every prompt and the cache missed: a rerun meant to take seconds took 2 h 56 min. A part's prompt now names only its chapter and pages, so re-splitting rereads only the parts that changed.
-- Same chapter, both models (chapter 3, pp. 52–86, where the 9B did not loop): the 9B listed 31 items, 28 on the cited page; Qwopus (whole part, reasoning off) listed 22, all on the cited page. Each found real concepts the other missed (the 9B: skewness, kurtosis, utility function, default spread; Qwopus: the covariance formula, Fama-French, investment grade). So the larger model is more exact but not more complete, and a digest is a finding aid, never a complete index. Whether smaller pieces find more was not settled.
-- Qwopus on the 24 GB Mac depends on free memory: with browsers and remote-desktop software open, only 5.4 of its 14 GB stayed resident, prompts that took 3 minutes took over 10, and LM Studio dropped the request after 600 s without data. A Qwopus stage needs a quiet machine.
-- A Qwopus-family 9B on the Linux machine ignored `reasoning_effort: none` and spent its whole budget (24,000 tokens) thinking without answering.
+**Test book:** a 654-page corporate finance textbook.
+- Ingestion took 8.4 minutes. It found 422 formulas; all were filled from the text layer, which keeps the symbols but not fractions or sub- and superscripts.
+- A small fast model wrote the digest in about 3½ hours locally (about 30 minutes per 100 pages).
+- Page accuracy, measured by finding each item's name on its cited page: in one chapter 26 of 30 items were on the page and 4 one page off; in another, 128 of 133 on the page and 5 one off.
+- Loops: the fast model looped on 7 of the 29 parts, each time running to the 8,000-token limit, while the longest healthy reply was about 2,000 tokens. A stronger fallback model reread the 7 in 12 pieces, with no loops left.
+- Across the book the fallback's rereads put 98% of items on the cited page, the fast model's other parts 87%, most of the rest one page off. The stronger model also found more per part.
+- Reasoning: on one half-chapter, the fallback's thinking took 76% of its output and twice the time. With `reasoning_effort: none` it was twice as fast and found more items, all on the right page. Some models ignore `reasoning_effort: none` and spend their whole budget thinking without answering: test it.
+- Every prompt named its part as "part X of N", so re-splitting the book changed every prompt and the cache missed: a rerun meant to take seconds took hours. A part's prompt now names only its chapter and pages, so re-splitting rereads only the parts that changed.
+- On one chapter where both models finished, the fast model listed more items and the stronger one was more exact; each found real concepts the other missed. So a digest is a finding aid, never a complete index.
+- A large local model that only partly fits in free memory becomes several times slower and can time out: run such stages on a quiet machine.
 
 ## 11. Privacy
 
-Stages 1, 2 and 4 are local. Stage 3 and the digest send lecture text, frames and materials to Anthropic through the session.
+Stages 1, 2 and 4 are local. Stage 3, and the digest when given to a session, send lecture text, frames and materials to the agent's model provider.
 
 - Material ingested with `local_only` stays out unless the user agrees for that lecture.
 - Handbooks for confidential lectures can use the local writer (section 13).
@@ -277,7 +277,7 @@ Stages 1, 2 and 4 are local. Stage 3 and the digest send lecture text, frames an
 | Sections repeated each other | v2 repeated the flight table | Agent writes the whole book at once |
 | Context caused padding | v3 grew 14% with unstated claims | Rule against links and summaries |
 | Table misaligned | v3 put 5.991 under the wrong heading | Table-shape check |
-| Local writer missed errors | The strong model never noticed the alpha error or the rounding issue | Opus writes, reading the images |
+| Local writer missed errors | The strong local model never noticed the alpha error or the rounding issue | The strongest model writes, reading the images |
 
 **Handbooks of one test lecture:**
 
@@ -286,10 +286,10 @@ Stages 1, 2 and 4 are local. Stage 3 and the digest send lecture text, frames an
 | v1 | Local | 3,339 | Leaked, invented content, lost table row |
 | v2 | Local | 2,064 | Faithful, repeated tables, 1 unneeded note |
 | v3 | Local | 2,355 | Padded, misaligned critical-values table |
-| v4 | Local | 1,843 | Clean table, one pointer to a repeated table, 1 unneeded note, missed the errors Opus found |
-| Opus | Opus 5.5 | 981 | Clean checks, 3 notes, 4 corrections logged |
+| v4 | Local | 1,843 | Clean table, one pointer to a repeated table, 1 unneeded note, missed the errors the agent found |
+| Agent | Strongest model | 981 | Clean checks, 3 notes, 4 corrections logged |
 
-**Time for a handbook.** Local model: about 65 minutes for 10 sections. Opus: minutes, in the session. Rough projections for a 90-minute lecture: 20–50 hours of ingestion.
+**Time for a handbook.** Local model: about 65 minutes for 10 sections. The agent: minutes, in the session. Rough projections for a 90-minute lecture: 20–50 hours of ingestion.
 
 ## 13. The local writer
 
@@ -297,10 +297,10 @@ Stages 1, 2 and 4 are local. Stage 3 and the digest send lecture text, frames an
 
 ## 14. Rebuilding
 
-1. Install: `scripts/install-mac.sh`, or a Python 3.12 venv with `pip install -e .`, plus ffmpeg, tesseract, pandoc, Chrome, a local model server and ripgrep.
+1. Install: a Python 3.11+ venv with `pip install -e ".[docs]"`, plus ffmpeg, tesseract, pandoc, Chrome or Chromium, a model server and ripgrep (`scripts/install-mac.sh` does this on macOS).
 2. `knowlib init <library>`, then set `config.yaml` as in section 4.
-3. Load the models in LM Studio under the exact ids in section 4.
-4. Run the unit tests: `.venv/bin/python -m pytest -q tests` (currently 65 pass).
+3. Make the models available on the server under the ids the config names, and run `knowlib models --check`.
+4. Run the tests: `python -m pytest -q tests`.
 5. Run sections 6–8 on one short lecture and compare with its slides.
 
 To rebuild without knowlib, keep these in order of importance: the separation of reading and writing, the rules in section 7, the checks in section 8, and the `source.md` structure.
@@ -309,7 +309,7 @@ The operating procedure for agents is Procedure 3 in the library's `CLAUDE.md`, 
 
 ## 15. Known limits
 
-- Only one short slide lecture has been through the full Opus route. Screen-heavy and long lectures are untested.
+- Few lectures have been through the full agent route. Screen-heavy lectures are untested.
 - Lectures in other languages, and in mixed languages, have not been tested.
 - A long lecture may take several sessions of reading frames. The brief asks for images of flagged, table and formula slides, and on screen recordings nearly every slide is flagged.
 - OCR flags are noise on screen recordings: 58 of 65 slides on one test lecture, and false alarms on the two checked.
@@ -323,7 +323,7 @@ A 95-minute lecture recorded as audio only, with a 65-slide deck, went through e
 
 **Ingestion**
 - Audio without video: `session.yaml` names the deck (`slides:`), `skip_slides` leaves out what must never be used (a class list), and the aligner matches speech to slides by their text. Its boundaries are often 10–30 s late, so every boundary is checked against the transcript and the slide text and recorded in `slide_starts`, each with a short quote, so reruns keep them.
-- Transcription on the machine, full `large-v3` over turbo for names and terms; `start_s` skips the room before class; the glossary (terms taken from the slides) is kept on every Whisper window, which corrected most misheard company names.
+- Transcription on the machine, with a larger speech model over a faster one for names and terms; `start_s` skips the room before class; the glossary (terms taken from the slides) is kept on every transcription window, which corrected most misheard company names.
 - Figures go to a remote model only after local OCR finds no personal information on them.
 
 **Writing and review**
@@ -365,8 +365,8 @@ A slide screenshot carries the slide's colours, fonts and decoration into the bo
   - d2: nested boxes, with an optional hand-drawn look.
   - Typst with CeTZ or fletcher: precise layouts and formulas. Its SVG draws text as paths, so the label check reads its PDF.
   - matplotlib or Vega-Lite: charts from the exact numbers.
-- **Why code, not image models.** Code draws labels and numbers exactly, while image-generation models misspell them. In November 2026 the free API keys gave no image model either: Gemini's image models answered "quota exceeded", and NVIDIA's SDXL was gone while its FLUX endpoints timed out.
-- **The cheap writer handles text, not layout.** In the first test (slide 25), Flash-Lite placed every label but left the six kinds of input as loose boxes. The vision checker caught it twice; the stronger model's revision fixed it after the guide said a list goes inside one box. Revisions therefore go to the stronger model, and the brief should state the grouping.
+- **Why code, not image models.** Code draws labels and numbers exactly, while image-generation models misspell them. The free API tiers tried offered no usable image model either.
+- **The cheap writer handles text, not layout.** In the first test (slide 25), the cheap writer placed every label but left the six kinds of input as loose boxes. The vision checker caught it twice; the stronger model's revision fixed it after the guide said a list goes inside one box. Revisions therefore go to the stronger model, and the brief should state the grouping.
 - **Fixing render errors.** Repeated compile-fix rounds help less each time (TikZilla, 2026: about 49%, 55% and 59% of failing figures fixed after one, two and three rounds), hence three retries.
 - **Checking the picture.** Chart-to-code studies found that code which looks right can still draw the wrong chart, so the check is on the rendered image as well as the text.
 - **Width.** A figure sits one column wide in the two-column layout, so the brief asks for no wider than about 1.5:1. Long flows read better top to bottom.

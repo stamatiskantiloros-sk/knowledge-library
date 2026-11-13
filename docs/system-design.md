@@ -2,7 +2,7 @@
 
 This document explains how knowlib works and why, in enough detail to rebuild it from nothing. It describes the code as built. Where the code and this document differ, the code is right and this document needs fixing.
 
-The handbook creator has its own document, [handbook-design.md](handbook-design.md). This one covers everything underneath it.
+The handbook creator has its own document, [handbook-design.md](handbook-design.md), and the checks that run through every stage are collected in [adversarial-review.md](adversarial-review.md). This one covers everything underneath.
 
 ## 1. What it is for
 
@@ -28,6 +28,7 @@ These rules explain most of the decisions below.
 9. **No backend is hard-coded.** Tools and models are chosen in config, per stage and even per lecture.
 10. **Models judge, code decides what code can decide.** Deterministic rules handle anything that does not need a model.
 11. **Local by default, and privacy is enforced in code.** `local_only` blocks any route that would send material out.
+12. **Nothing grades itself.** Every output is checked by something that did not produce it: a different method, code, a second model of another family, or the user. Disagreements become flags for a stronger reader, never quiet fixes. See [adversarial-review.md](adversarial-review.md).
 
 ## 3. Architecture
 
@@ -79,7 +80,7 @@ There are two layouts, chosen at setup and recorded as `library.mode`. Everythin
 
 The crawler skips `_knowlib/`, `notes/`, the agent files at the top and any Markdown carrying `generated_by: knowlib`, so a second run never ingests its own output. Image links are written relative to wherever the Markdown sits (`../../_knowlib/assets/<id>/page_001.png` two folders down). The manifest stores each source's output path, so finding a source from its id never involves guessing. A scanned page with no text layer and no OCR text keeps its image in the Markdown, so it is never silently lost.
 
-**Separate** (`mode: separate`, the original layout, used by the tested DP-100 library). Originals go in `inbox/` and each source gets its own folder:
+**Separate** (`mode: separate`, the original layout). Originals go in `inbox/` and each source gets its own folder:
 
 ```
 <library>/
@@ -101,7 +102,7 @@ The crawler skips `_knowlib/`, `notes/`, the agent files at the top and any Mark
 
 Its `.gitignore` excludes `.work/`, `archive/` and `inbox/`, so a library can be its own repository of text.
 
-**Setup** (`setup.py`). `knowlib init <dir>` asks a few questions, each with a default: in place or separate (in place when the folder already holds material); which folders or name patterns to leave out, after showing how many files per top-level folder knowlib can read; whether the material is confidential (`local_only`); the language; and, from the models LM Studio has downloaded, a fast model, a strong model and a note reviewer, ideally of another family. Every answer has a flag (`--mode`, `--skip`, `--local-only`, `--language`, `--fast-model`, `--strong-model`, `--reviewer-model`) and `--yes` accepts the defaults, so an agent can run setup without questions. Only the answers go into the config, under a header naming the date; everything else keeps the built-in default (Appendix A), and `config.example.yaml` is copied beside it for reference. A previous config is kept as `config.yaml.bak`. `knowlib process` on a folder that was never set up offers setup at a terminal and otherwise says to run `knowlib init`, rather than creating `inbox/` there.
+**Setup** (`setup.py`). `knowlib init <dir>` asks a few questions, each with a default: in place or separate (in place when the folder already holds material); which folders or name patterns to leave out, after showing how many files per top-level folder knowlib can read; whether the material is confidential (`local_only`); the language; and, from the models the local model server offers, a fast model, a strong model and a note reviewer, ideally of another family. Every answer has a flag (`--mode`, `--skip`, `--local-only`, `--language`, `--fast-model`, `--strong-model`, `--reviewer-model`) and `--yes` accepts the defaults, so an agent can run setup without questions. Only the answers go into the config, under a header naming the date; everything else keeps the built-in default (Appendix A), and `config.example.yaml` is copied beside it for reference. A previous config is kept as `config.yaml.bak`. `knowlib process` on a folder that was never set up offers setup at a terminal and otherwise says to run `knowlib init`, rather than creating `inbox/` there.
 
 **Files for agents.** Setup writes the procedures from one template, filled in for the layout (`AGENTS.md` and a `CLAUDE.md` that imports it in place; `CLAUDE.md` in a separate library), plus the index and glossary; it never overwrites them once written. After every `process` and `mark-synthesized`, knowlib rewrites the sources table between `<!-- knowlib:sources -->` markers in the index (id, title, type, size, a link to the Markdown, flags, synthesized) and `sources.jsonl`, so an agent goes from a cited id to its file in one lookup. Each generated Markdown starts with a contents list of its headings, each with its page when the text has page markers, when there are between 3 and 80.
 
@@ -223,7 +224,7 @@ All use `first_working()`, which tries backends in order and turns an import err
 
 **PDF.** Docling, then Marker or PyMuPDF. Docling and PyMuPDF write the text page by page, each page starting with `<!-- page N (pdf M) -->`, where N is the number printed on the page (the PDF's page label) and M its place in the file, so notes can cite printed pages. Marker has no page markers. Docling leaves `<!-- formula-not-decoded -->` where it cannot read an equation; knowlib fills each gap with the PDF text layer inside the formula's box, in a ```` ```formula ```` block. The symbols survive but the layout does not, so a flag counts these formulas, and any gap the text layer cannot fill. Tables are written compact. `outline()` saves the PDF's bookmarks and its table and figure captions, with printed pages, to `assets/outline.json`. A caption is a line starting "Table 3.1" followed by nothing or a title in capitals. "Table 3.7 summarizes" and a sentence ending "Table 3.7." are mentions. A number that is only mentioned keeps its first mention's page, with no title. Then `_page_survey` checks every page: under 25 characters means no text layer; an image over 4% of the page or more than 40 drawings means a figure. Figure pages are rendered at 200 dpi into `assets/`, so charts remain available as images. Scanned pages are rendered too. If the backend's text is well above the text layer (more than 40 characters per scanned page), the backend's OCR is trusted and each page is flagged for checking. Otherwise knowlib OCRs them with Tesseract or a vision model.
 
-**Figures in PDFs** (`ingestors/figures.py`, Docling only). Docling marks each picture and its box; knowlib writes `<!-- figure P-K box -->` there, crops the box at 200 dpi, and skips, without a model, boxes under 60 pt or 2% of the page (icons, bullets), a picture that recurs on three or more pages (logos, running heads) and photos with no text in them (OCR finds fewer than three words in a picture that is not flat-coloured). The vision model (`pdf.figures.model`, then `images.model`, then the strong local model, `frame_selection` with its `caption_model`) reads the rest: every label and number exactly, tables, journal entries and T-accounts as Markdown tables with the account names in their cells, no headings or descriptions of colours and arrows, no estimate of a value that is not printed (a bar's length), and a "Figure:" line saying what a chart or diagram shows; it may answer DECORATIVE, which counts even after an explanation. The fast model was tried first on a 881-page textbook and flagged 176 of 255 readings: it dropped text beside tables, moved account names out of journal entries into its description and estimated unlabelled bars, so figures, being few, go to the strong model. Its text goes where the picture was, in a quote block under the cropped image, on its page, so a note cites it as `p. N` and check-notes can find its numbers. OCR checks each reading as for slides, without the reading's headings, code fences and dotted leaders, which OCR never sees; a sign that OCR spaced apart (`+ 3,000`) or dropped still matches, opposite signs do not. Skipped pictures stay as `<!-- image: small | repeated | photo without text | decorative -->`. An empty or cut-off reply is asked again, `pdf.figures.retries` (2) more times, with twice the tokens each time: it comes from the model spending `pdf.figures.max_tokens` (8000) thinking, from a big table that needs more room (a page of twelve MRP records stopped after seven at 4000), or from a thinking loop that the server stops early, and a loop is random (on the textbook, the model server looped on 12 of 246 plain journal entries and read each one at once when asked again). An empty reply after that is never taken as decorative: the figure is flagged as not read, its crop is kept beside `<!-- image: not read -->`, and nothing is cached, so the next run asks again. A reading that still stops at the limit ends `[CUT OFF ...]` and is flagged, and the next run asks again too. Before reading, `pdf.figures.detail_check` (`stop`, or `warn`, `off`) asks the server how many prompt tokens the largest crop still to be read gets, and a copy at half its width and height: a server that keeps the detail gives the full crop about four times as many, so under twice as many means it caps image tokens and the run stops with the fix. A capped llama.cpp server gave every figure about 290 tokens: a dense ROIC tree came back with ten wrong numbers, and with the cap raised to about 2,000 tokens (2 megapixels, enough for nearly every crop at 200 dpi) all 41 values were exact. Readings are cached by crop and prompt, and Docling's own output is cached by file hash in `work/docling/`, so reprocessing a book does not convert it again.
+**Figures in PDFs** (`ingestors/figures.py`, Docling only). Docling marks each picture and its box; knowlib writes `<!-- figure P-K box -->` there, crops the box at 200 dpi, and skips, without a model, boxes under 60 pt or 2% of the page (icons, bullets), a picture that recurs on three or more pages (logos, running heads) and photos with no text in them (OCR finds fewer than three words in a picture that is not flat-coloured). The vision model (`pdf.figures.model`, then `images.model`, then the strong local model, `frame_selection` with its `caption_model`) reads the rest: every label and number exactly, tables, journal entries and T-accounts as Markdown tables with the account names in their cells, no headings or descriptions of colours and arrows, no estimate of a value that is not printed (a bar's length), and a "Figure:" line saying what a chart or diagram shows; it may answer DECORATIVE, which counts even after an explanation. The fast model was tried first on a 881-page textbook and flagged 176 of 255 readings: it dropped text beside tables, moved account names out of journal entries into its description and estimated unlabelled bars, so figures, being few, go to the strong model. Its text goes where the picture was, in a quote block under the cropped image, on its page, so a note cites it as `p. N` and check-notes can find its numbers. OCR checks each reading as for slides, without the reading's headings, code fences and dotted leaders, which OCR never sees; a sign that OCR spaced apart (`+ 3,000`) or dropped still matches, opposite signs do not. Skipped pictures stay as `<!-- image: small | repeated | photo without text | decorative -->`. An empty or cut-off reply is asked again, `pdf.figures.retries` (2) more times, with twice the tokens each time: it comes from the model spending `pdf.figures.max_tokens` (8000) thinking, from a big table that needs more room (a page of twelve MRP records stopped after seven at 4000), or from a thinking loop that the server stops early, and a loop is random (on the textbook, the model server looped on 12 of 246 plain journal entries and read each one at once when asked again). An empty reply after that is never taken as decorative: the figure is flagged as not read, its crop is kept beside `<!-- image: not read -->`, and nothing is cached, so the next run asks again. A reading that still stops at the limit ends `[CUT OFF ...]` and is flagged, and the next run asks again too. Before reading, `pdf.figures.detail_check` (`stop`, or `warn`, `off`) asks the server how many prompt tokens the largest crop still to be read gets, and a copy at half its width and height: a server that keeps the detail gives the full crop about four times as many, so under twice as many means it caps image tokens and the run stops with the fix. A capped server gave every figure about 290 tokens: a dense ROIC tree came back with ten wrong numbers, and with the cap raised to about 2,000 tokens (2 megapixels, enough for nearly every crop at 200 dpi) all 41 values were exact. Readings are cached by crop and prompt, and Docling's own output is cached by file hash in `work/docling/`, so reprocessing a book does not convert it again.
 
 **Office.** Documents use Docling, then Pandoc, which also extracts embedded images. Presentations are written slide by slide with `python-pptx`, in the same shape as video slides: image (LibreOffice to PDF to PNG, if installed), slide text, tables and speaker notes.
 
@@ -259,10 +260,10 @@ The result is a piecewise-linear map, `t_video = t_primary + b + drift × t_prim
 
 ### 11.3 Transcription
 
-Backends: `mlx-whisper`, `faster-whisper`, `whisper-cpp`, `subtitles`, `mock`. Default model: `whisper-large-v3-turbo`.
+Backends: `mlx-whisper`, `faster-whisper`, `whisper-cpp`, `subtitles`, `mock`. The model is set in `transcription.model`; a larger model is worth its time for names and terms.
 
 - Language is set explicitly, because auto-detection fails on mixed lectures. `mixed` maps to `mixed_language_as`.
-- The session glossary seeds Whisper's initial prompt, up to 800 characters, so names and terms come out right.
+- The session glossary seeds the speech model's initial prompt, up to 800 characters, so names and terms come out right.
 - `condition_on_previous_text` is off, because it risks repetition loops.
 - Three or more identical consecutive segments collapse, with a flag.
 - With `prefer_subtitles`, the lecture's own `.srt` or `.vtt` is used instead. The parser strips markup and the trailing cue numbers some exporters add.
@@ -354,20 +355,20 @@ A slide's speech runs from its start to the next slide's start. Audio-only sessi
 
 | Backend | Use | Local |
 |---|---|---|
-| `openai` | Any OpenAI-compatible server, such as LM Studio or llama.cpp | If the URL is this machine |
-| `mlx-vlm` | Apple Silicon in-process | Yes |
+| `openai` | Any OpenAI-compatible server, local or remote | If the URL is this machine |
+| `mlx-vlm` | In-process, on macOS | Yes |
 | `ollama` | Ollama server | Yes |
 | `api` | Any model through LiteLLM | No |
-| `agent` | Subagents in a Claude Code session | No |
+| `agent` | Subagents of an agent session | No |
 | `mock` | Tests | Yes |
 
-With `manage_lms`, the `openai` provider loads and unloads models through the `lms` CLI, passing context length and parallel slots. Parallel slots share memory, and requests are sequential, so use one. It strips reasoning up to `</think>` (and Gemma's `<thought>` blocks) and records `finish_reason`. Before loading, it compares the model's size from `lms ls` with the memory macOS can hand out without swapping (free, inactive, speculative and purgeable pages). A model that will not fit stops the run at once with `NotEnoughMemory`, naming the largest apps, instead of loading into swap: on the 24 GB Mac a 14 GB model with two browsers open ran several times slower and LM Studio dropped requests after 600 s without output. Callers that fall back to another model on a load error let this one through. `memory_check: false` turns it off, and a model already loaded is not checked. A local timeout is required, because a stalled local server otherwise blocks a lecture for its full timeout.
+With `manage_lms`, the `openai` provider loads and unloads models through the `lms` CLI, passing context length and parallel slots. Parallel slots share memory, and requests are sequential, so use one. It strips reasoning blocks (`</think>`, `<thought>`) and records `finish_reason`. Before loading, it compares the model's size with the memory the system can hand out without swapping. A model that will not fit stops the run at once with `NotEnoughMemory`, naming the largest apps, instead of loading into swap: in testing, a model that only partly fitted ran several times slower and the server dropped requests after 600 s without output. Callers that fall back to another model on a load error let this one through. `memory_check: false` turns it off, and a model already loaded is not checked. A local timeout is required, because a stalled local server otherwise blocks a lecture for its full timeout.
 
-**API chains** (`providers/chain.py`, `providers/quota.py`). A role can name a chain instead of one model: `backend: chain` with `chain: [<provider>/<model>, ...]`. The `providers:` section holds each provider's URL, its key (an environment variable, or `api_key_file` such as `~/.google_key`), the time zone its day resets in, whether its free tier may train on what it is sent, and each model's limits (`rpm`, `tpm`, `rpd`, `context`) and settings (Gemma, for one, takes no `reasoning_effort`). The defaults include Google's Gemini and Gemma models. Free-tier limits are per account or project, not per library, so a ledger in `~/.config/knowlib/usage.json` counts each model's requests and tokens across runs and processes. A request goes to the first model with quota left: it waits when the minute's budget is spent, skips a model whose day is spent, and on a 429 reply reads Google's quota details (a daily quota spent marks the model until its reset and records the real limit; a per-minute one waits and asks again). A server error moves on to the next model; a request no model can take fails like a server failure. Caches look a prompt up under every model in the chain and store a reply under the model that wrote it, so changing a chain never redoes finished work. The review asks about one note per request by default. It can pack several (`notes_review.batch_notes`) up to the first model's budget (80% of the smaller of `tpm` and `context`), but accuracy falls with each note added: with planted errors, Gemini 3.5 Flash-Lite caught 12 of 16 one note at a time, 9 three at a time and 5 six at a time. Batch only to stretch a small daily quota. A batch reply whose JSON is broken keeps every complete verdict (`salvage`); each note's answer is cached under its own prompt, and notes a batch misses are asked one by one. The digest packs up to four book parts per request (`digest.batch_parts`), each part's digest after its own marker line. `knowlib models` shows each chain and the requests left today.
+**API chains** (`providers/chain.py`, `providers/quota.py`). A role can name a chain instead of one model: `backend: chain` with `chain: [<provider>/<model>, ...]`. The `providers:` section holds each provider's URL, its key (an environment variable, or `api_key_file` such as `~/.google_key`), the time zone its day resets in, whether its free tier may train on what it is sent, and each model's limits (`rpm`, `tpm`, `rpd`, `context`) and settings (some models take no `reasoning_effort`). The defaults include one provider's free-tier models as an example. Free-tier limits are per account or project, not per library, so a ledger in `~/.config/knowlib/usage.json` counts each model's requests and tokens across runs and processes. A request goes to the first model with quota left: it waits when the minute's budget is spent, skips a model whose day is spent, and on a 429 reply reads the provider's quota details (a daily quota spent marks the model until its reset and records the real limit; a per-minute one waits and asks again). A server error moves on to the next model; a request no model can take fails like a server failure. Caches look a prompt up under every model in the chain and store a reply under the model that wrote it, so changing a chain never redoes finished work. The review asks about one note per request by default. It can pack several (`notes_review.batch_notes`) up to the first model's budget (80% of the smaller of `tpm` and `context`), but accuracy falls with each note added: with planted errors, the reviewer caught 12 of 16 one note at a time, 9 three at a time and 5 six at a time. Batch only to stretch a small daily quota. A batch reply whose JSON is broken keeps every complete verdict (`salvage`); each note's answer is cached under its own prompt, and notes a batch misses are asked one by one. The digest packs up to four book parts per request (`digest.batch_parts`), each part's digest after its own marker line. `knowlib models` shows each chain and the requests left today.
 
 **Privacy.** Personal information never leaves the machine and never reaches written output. `privacy.py` finds emails, phone numbers and the names listed in `privacy.names`; before a figure goes to a remote model, classic OCR on this machine reads it and a figure showing any of these stays local (flagged for the agent to read); the handbook brief is redacted ("[a person]") and its rules forbid naming anyone; `handbook --finish` checks the finished text and, by OCR, every image it shows, and lists each finding under "To check". Transcription runs on this machine.
 
-**Independence.** The writer's model may not review its own notes: `knowlib models` and `review-notes` refuse a review chain that contains the model in `notes_writer`, and warn when a reviewer is of the same family (gemini, qwen, minimax, ...). `knowlib check-figures` has a second vision model, set in `pdf.figures.second_model` and best of another family than the reader, reread the figures classic OCR flagged and the tables; it compares tables row by row (OCR compares numbers as a bag, so a right number in the wrong row passes) and other figures by their numbers, and writes the disagreements to `work/figures/crosscheck-<id>.md` for QA. Second readings are cached beside the first, one at a time by default.
+**Independence.** The writer's model may not review its own notes: `knowlib models` and `review-notes` refuse a review chain that contains the model in `notes_writer`, and warn when a reviewer is of the same model family. `knowlib check-figures` has a second vision model, set in `pdf.figures.second_model` and best of another family than the reader, reread the figures classic OCR flagged and the tables; it compares tables row by row (OCR compares numbers as a bag, so a right number in the wrong row passes) and other figures by their numbers, and writes the disagreements to `work/figures/crosscheck-<id>.md` for QA. Second readings are cached beside the first, one at a time by default.
 
 **Roles** (`models.py`). A library has five model roles, each resolved from the config the way the code that runs it builds its provider: reading (`frame_selection` with its `caption_model`, which also reads figures and images), digest (`frame_selection` plus `digest`), writer (`notes_writer`, recorded for the agent, which writes the notes), review (`frame_selection`, `caption_model`, then `notes_review`) and handbook (`frame_selection` plus `handbook`). `knowlib models` writes a role's provider into only the keys that role reads, keeping the other settings and a backup of the config. A check lists the server's models and confirms the one chosen is served, that a reading model takes images, and, in full, that the server does not cap image tokens (a 1600x1200 test page against a copy at half size) and that the digest's parts fit the context. Before a run, the roles that command uses are checked quickly; a failure stops it, and a choice changed since the last confirmed run is asked about at a terminal (fingerprints in `work/models_confirmed.json`). The pattern the roles encourage: a fast server reads, a session model writes, and a stronger one reviews.
 
@@ -385,7 +386,7 @@ With `manage_lms`, the `openai` provider loads and unloads models through the `l
 
 Files suit this because answers can arrive out of order, a run resumes at any point, and there is no JSON escaping to get wrong.
 
-Haiku reads ordinary frames. Sonnet reads `table`, `chart`, `code`, `whiteboard`, `diagram` and `demo`, and writes hard captions. The fast local model still decides keep or drop, and writes easy captions. Provenance is recorded under `pipeline.reader`. `local_only` refuses this backend. The `knowlib handbook` command does not take `--reader`, so ingest with `process` first.
+A smaller session model reads ordinary frames. A stronger one reads `table`, `chart`, `code`, `whiteboard`, `diagram` and `demo`, and writes hard captions. The fast local model still decides keep or drop, and writes easy captions. Provenance is recorded under `pipeline.reader`. `local_only` refuses this backend. The `knowlib handbook` command does not take `--reader`, so ingest with `process` first.
 
 ## 13. After ingestion: the agent
 
@@ -394,7 +395,7 @@ knowlib stops at clean sources. `templates/CLAUDE.md` tells the agent what comes
 1. **QA.** Read `last_run.json`, the flags, three transcript passages, and every image a flag names. Fix through config and reprocessing, never by editing `source.md`.
 2. **Synthesize.** Write topic notes in `notes/` with a citation on every claim, in the form `[@<source-id>, slide 12, 14:32]`. Record disagreements instead of picking a side. A book is synthesized from its digest, a chapter at a time, reading only the pages the digest points to. Update `index.md` and `glossary.md`, run `knowlib check-notes` and `knowlib review-notes`, then `knowlib mark-synthesized`.
    **Checks on notes** (`notecheck.py`). Notes are where sources merge, one note per concept, and nothing generates them by code, so three checks keep them honest. *Citations:* the source exists; the page (from the page markers), slide (with its time range), passage time or section exists; and the claim's numbers (compared as values, so 8.5% matches 8.50 and 1,000 matches 1000; whole numbers under 10 are skipped) and quotations of four words or more appear there. A miss names the neighbouring page if the text is there. Claims of four words or more with no citation are listed; the summary before the first `##` heading is not checked. A claim citing several sources is checked for its places only. *Duplicates:* notes sharing a title or alias after normalisation, notes sharing half their citations, notes with 60% of their wording in common, and claims written in two notes. *Consolidation:* every source marked synthesized is cited; `sources:` matches the citations; every note is in `index.md`; `[[links]]` resolve; a note older than a reprocessed source it cites; and sources that mention the note's title or aliases three times or more without being cited, the leads where another book or deck has not been merged in. HTML comments are ignored. The command exits with 1 on errors and writes `.work/notes_check.json`.
-   **Review by a second model** (`notereview.py`). The checks above match numbers and quotations but cannot tell a faithful paraphrase from a wrong one. `knowlib review-notes` sends each note, with the passages its claims cite (each passage once, cut at 8,000 characters), to a model other than the writer, which judges every claim against those passages only: supported, partly (overstated, too general or too exact), unsupported, or unclear. Unsupported is an error, partly and unclear are warnings. The reviewer is configured like any model stage: `notes_review` overrides `frame_selection` and its `caption_model`, so by default the strong local model reviews, and setting `openai_model` picks another local model (the tested library uses Gemma 4 12B, the only non-Qwen family on the Mac, so the reviewer does not share the Qwen readers' or the writer's blind spots). `backend: agent` with `agent_model: sonnet` sends the review to a session subagent through the same jobs file as the session reader. The manifest records `local_only` for every source ingested under it, and keeps it on re-ingestion; a claim citing such a source is never sent to the session and is reported as not reviewed. Replies are cached in `.work/notes_review_cache.json`, so only changed notes are reviewed again, and the findings go to `.work/notes_review.json`.
+   **Review by a second model** (`notereview.py`). The checks above match numbers and quotations but cannot tell a faithful paraphrase from a wrong one. `knowlib review-notes` sends each note, with the passages its claims cite (each passage once, cut at 8,000 characters), to a model other than the writer, which judges every claim against those passages only: supported, partly (overstated, too general or too exact), unsupported, or unclear. Unsupported is an error, partly and unclear are warnings. The reviewer is configured like any model stage: `notes_review` overrides `frame_selection` and its `caption_model`, so by default the strong local model reviews, and setting `openai_model` picks another. Pick a reviewer of another family than the readers and the writer, so it does not share their blind spots. `backend: agent` with `agent_model: <model>` sends the review to a session subagent through the same jobs file as the session reader. The manifest records `local_only` for every source ingested under it, and keeps it on re-ingestion; a claim citing such a source is never sent to the session and is reported as not reviewed. Replies are cached in `.work/notes_review_cache.json`, so only changed notes are reviewed again, and the findings go to `.work/notes_review.json`.
 3. **Research.** Answer from notes, drilling into sources with `rg`, and keep sources separate from reasoning.
 4. **Handbook.** See [handbook-design.md](handbook-design.md).
 
@@ -435,8 +436,8 @@ Any change to selection rules should also be tested on real frames. Unit tests c
 
 ## 17. Rebuilding from nothing
 
-1. Install Python 3.11 or newer, ffmpeg, Pandoc, Tesseract with language data, and a local vision model server. `scripts/install-mac.sh` does this on Apple Silicon.
-2. Install the package with `pip install -e ".[mac,docs,dev]"`.
+1. Install Python 3.11 or newer, ffmpeg, Pandoc, Tesseract with language data, and a local vision model server. `scripts/install-mac.sh` does this on macOS.
+2. Install the package with `pip install -e ".[docs,dev]"`, plus the extra for your platform (`mac` or `linux`).
 3. Build in this order, testing each with the mock provider: contract, config, router, manifest, runner, the text ingestor, then PDF, Office and web.
 4. Then build media in pipeline order: session, transcription, frames, single-prompt selection, OCR, rendering. Add alignment once one-file lectures work.
 5. Add the split mode and test it on real lectures. Most quality depends on it.
@@ -450,130 +451,17 @@ Keep the decisions in section 2, the thresholds in section 11, and the prompts i
 - The recurring-text filter still lets some interface text through.
 - A failed reading leaves junk OCR in `source.md` until someone reprocesses it.
 - Models can silently correct on-screen spelling.
-- Video ingestion is slow on a laptop: time follows slide count, at minutes per slide with a strong local model.
+- Video ingestion with local models is slow on consumer hardware: time follows slide count, at minutes per slide with a strong model.
 - `--only` is case-sensitive in `process` and case-insensitive in `handbook`.
 - The session reader needs a person to start it, and has been tested on one short lecture.
 - Web pages with almost no content, and CSV files with an undetectable delimiter, fail ingestion.
 - Lectures in other languages and mixed languages have not been tested end to end.
-- Book digests have been tested on one 654-page textbook. The fast model loops on about a quarter of the parts, so a digest needs the fallback model and takes hours.
+- Book digests have been tested on one 654-page textbook. A small fast model looped on about a quarter of the parts, so a digest needs the fallback model and can take hours locally.
 - Formulas in PDFs keep their symbols but not their layout (fractions, sub- and superscripts).
 
 ## Appendix A: default configuration
 
-```yaml
-library:
-  inbox: inbox
-  sources: sources
-  notes: notes
-  work: .work
-  ignore: []
-  layout: null
-local_only: false
-transcription:
-  backend: mlx-whisper
-  model: mlx-community/whisper-large-v3-turbo
-  whisper_cpp_model: ~/models/ggml-large-v3-turbo.bin
-  language: el
-  mixed_language_as: el
-  word_timestamps: true
-  glossary_prompt_chars: 800
-  prefer_subtitles: false
-alignment:
-  envelope_hz: 100
-  window_s: 30
-  step_s: 30
-  search_s: 8
-  min_confidence: 0.2
-  jump_threshold_s: 0.5
-  min_drift_span_s: 300
-  mux_better_audio: false
-video:
-  fps: 1
-  extract_resolution: native
-  frame_format: jpg
-  dedup: phash
-  phash_size: 16
-  phash_threshold: 6
-  ssim_check: true
-  ssim_width: 640
-  ssim_threshold: 0.985
-  min_group_s: 2
-  camera_change_ratio: 0.5
-  talking_head_interval_s: 60
-  frame_store: native
-  selection_input: native
-  vlm_max_native_px: 2048
-  tile_px: 1344
-  tile_overlap: 0.12
-  ocr_input: native
-  model_view_max_px: 1568
-  keep_lowres_archive: true
-  archive_px: 480
-  samples_per_candidate: 3
-  transcript_context_s: 10
-frame_selection:
-  backend: mlx-vlm
-  model: mlx-community/Qwen3-VL-8B-Instruct-4bit
-  base_url: http://localhost:8080/v1
-  openai_model: local
-  ollama_model: qwen3-vl:8b
-  ollama_url: http://localhost:11434
-  api_model: anthropic/claude-sonnet-4-5
-  max_tokens: 1200
-  temperature: 0.0
-  split: false
-  transcribe_model: null
-  caption_model: null
-  caption_model_types:
-  - table
-  - chart
-  memory_check: true
-handbook:
-  language: English
-  max_tokens: 6000
-digest:
-  min_pages: 100
-  max_chars: 120000
-  max_tokens: 8000
-  fallback_model: null
-  fallback_max_chars: 60000
-notes_review:
-  max_tokens: 4000
-  max_passage_chars: 8000
-ocr_crosscheck:
-  backends:
-  - apple-vision
-  languages:
-  - el-GR
-  - en-US
-  tesseract_langs: ell+eng
-  similarity_threshold: 0.75
-images:
-  describe: true
-  model: null
-  max_px: 1568
-pdf:
-  backend: docling
-  fallbacks:
-  - pymupdf
-  scan_backend: tesseract
-  render_figure_pages: true
-  render_dpi: 200
-  min_text_chars: 25
-  figures: {read: true, model: null, dpi: 200, min_side_pt: 60, min_page_share: 0.02, repeat_pages: 3}
-office:
-  backend: docling
-  fallbacks:
-  - pandoc
-  - python-pptx
-  render_slides: true
-web:
-  backend: trafilatura
-  fallbacks: []
-  timeout_s: 30
-provider:
-  vision: null
-```
+Every key and its default is in `src/knowlib/config.py` (`DEFAULTS`), with a comment on each. `knowlib init` copies `config.example.yaml` beside the library's `config.yaml` for reference, and the config holds only what setup asked or the user changed. Model ids are never assumed: setup and `knowlib models` fill them in per library.
 
 ## Appendix B: model prompts
 
