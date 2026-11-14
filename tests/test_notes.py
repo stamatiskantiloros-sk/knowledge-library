@@ -246,3 +246,8 @@ def test_a_slide_cited_at_a_time_gives_the_slide_and_the_passage_at_that_time(tm
     assert "passage 30." in text and "passage 31." in text
     assert "passage 29." not in text and "passage 32." not in text
     assert "passage 12." in Source(md, "x").region("slide 8")[0]
+
+
+def test_latex_thousands_and_quotes_closing_on_punctuation():
+    from knowlib.notecheck import number_values
+    assert number_values(r"$167{,}664 and 83{,}832") == {167664.0, 83832.0}

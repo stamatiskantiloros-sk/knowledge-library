@@ -66,6 +66,7 @@ def number_values(text: str) -> set[float]:
     three digits groups thousands; any other comma is a decimal comma."""
     out = set()
     text = re.sub(r"(\$[A-Z]{1,3})(?=\d)", r"\1 ", unicodedata.normalize("NFKC", text))   # $A2.53, $NZ10
+    text = text.replace("{,}", ",").replace("\\,", ",")                                   # LaTeX 167{,}664
     for raw in NUM.findall(text):
         n = raw.rstrip("%").strip(".,")
         n = re.sub(r",(?=\d{3}(\D|$))", "", n).replace(",", ".")
@@ -279,7 +280,8 @@ def check_citations(notes: list[Note], sources: dict[str, Source]) -> list[Findi
                 continue
             claim = CITE.sub("", text)
             values = claim_numbers(claim)
-            quotes = [norm(q) for q in QUOTE.findall(claim) if len(q.split()) >= 4]
+            # a quotation may close on the writer's punctuation ("... on a particular date,")
+            quotes = [norm(q).rstrip(",.;:") for q in QUOTE.findall(claim) if len(q.split()) >= 4]
             for sid, loc in cites:
                 if sid not in sources:
                     out.append(Finding("citations", "error", note.slug, f"[@{sid}] is not a source in the library"))
