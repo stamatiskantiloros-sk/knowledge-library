@@ -181,10 +181,20 @@ class MediaSessionIngestor(Ingestor):
 
         # ---- frames -------------------------------------------------------------------
         kept, dropped, sel_stats, dedup_stats = [], [], {}, {}
-        if sess.video:
+        if sess.video or sess.part_videos:
             vc = cfg["video"]
             progress.stage("frame extraction")
-            frames = extract_frames(sess.video, work / "frames", float(vc["fps"]), vc.get("frame_format", "jpg"))
+            if sess.video:
+                frames = extract_frames(sess.video, work / "frames", float(vc["fps"]), vc.get("frame_format", "jpg"))
+            else:
+                from ..media.frames import part_frames
+                frames = part_frames(sess.part_videos, work, float(vc["fps"]), vc.get("frame_format", "jpg"))
+                pipeline["part_videos"] = [{"part": p["part"], "video": p["video"].name, "offset_s": p["offset_s"],
+                                            "match": p["match"]} for p in sess.part_videos]
+                for p in sess.part_videos:
+                    if p["match"] < 0.15:
+                        flags.append(f"{p['video'].name}: its sound did not match {p['part']}'s audio "
+                                     f"(match {p['match']}); its frames are placed assuming both started together")
             cands, dedup_stats = group_frames(frames, vc)
             save_candidates(cands, dedup_stats, work / "candidates.json")
             pipeline["frames"] = stage("ffmpeg", fps=vc["fps"], resolution="native")
@@ -193,6 +203,14 @@ class MediaSessionIngestor(Ingestor):
                                  "mode": dedup_stats["mode"]}
             if dedup_stats["mode"] == "interval":
                 flags.append("no stable slides detected (talking head or constant motion): sparse interval frames used")
+            if vc.get("redact_personal", True):     # before any model sees a frame
+                from ..media.redact import redact_candidates
+                progress.stage("privacy redaction")
+                red = redact_candidates(cands, cfg, progress)
+                pipeline["redaction"] = {"tool": "apple-vision", **red}
+                if red["redacted"]:
+                    flags.append(f"personal information blacked out in {red['redacted']} frames ({red['lines']} lines): "
+                                 "names from privacy.names, emails and phone numbers")
             provider = get_vision_provider(cfg["frame_selection"], cfg)
             kept, dropped, sel_stats = select(cands, segs, provider, cfg, work)
             stop_if_waiting(Path(cfg["agent_dir"]))
@@ -226,6 +244,12 @@ class MediaSessionIngestor(Ingestor):
                                               "languages": cfg["ocr_crosscheck"].get("languages")}
             for e in sorted(ocr_errors):
                 flags.append(f"ocr cross-check unavailable: {e}")
+            if vc.get("redact_personal", True):     # what a model read off a frame: names, emails, phones out
+                from .. import privacy
+                ns = privacy.names(cfg)
+                for k in kept:
+                    k.slide_text = privacy.redact(k.slide_text or "", ns)
+                    k.caption = privacy.redact(k.caption or "", ns)
             (work / "kept.json").write_text(json.dumps(kept_to_json(kept), ensure_ascii=False, indent=1), encoding="utf-8")
             stats.update(frames=dedup_stats["frames"], candidates=dedup_stats["groups"], kept=len(kept),
                          selection=sel_stats)

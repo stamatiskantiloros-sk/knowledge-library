@@ -14,6 +14,7 @@ session.yaml (all keys optional):
     tags: [mba, finance]
     files: [lecture.mp4, recorder.wav]  # explicit membership (otherwise: all media in the folder)
     parts: [{name: Part A, audio: a.m4a}, {name: Part B, audio: b.m4a}]  # one lecture recorded in parts: audio joined in order
+           # a part may name its screen recording too: {name: Part A, audio: a.m4a, video: screen-a.mov}
 """
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ class Session:
     sidecar: dict = field(default_factory=dict)
     info: dict = field(default_factory=dict)   # ffprobe results per file name
     glossary: list[str] = field(default_factory=list)
+    part_videos: list[dict] = field(default_factory=list)   # [{video, shift_s, offset_s, match}] for parts with a video
 
     @property
     def needs_alignment(self) -> bool:
@@ -104,11 +106,39 @@ def assemble(paths: list[Path], folder: Path, sidecar: dict, work: Path) -> Sess
                    info=info, glossary=_glossary(sidecar, folder))
 
 
+def video_offset(audio: Path, video: Path, work: Path, max_lag_s: float = 240.0, rate: int = 10) -> tuple[float, float]:
+    """How far the video's timeline is behind the audio's: audio time = video time + offset. Found by
+    matching the loudness envelopes of the audio and the video's own sound track (a screen recording
+    picks up the room faintly). Returns (offset_s, match), match being the correlation at the best lag
+    (around 0.3 or more is a clear match; below 0.15, treat the offset as unknown)."""
+    def envelope(path: Path, name: str) -> np.ndarray:
+        x, sr = load_wav(extract_wav(path, work / name))
+        hop = sr // rate
+        n = len(x) // hop
+        rms = np.sqrt((x[: n * hop].reshape(n, hop).astype(np.float64) ** 2).mean(axis=1)) + 1e-6
+        e = 20 * np.log10(rms)
+        return (e - e.mean()) / (e.std() + 1e-9)
+    a = envelope(audio, f"off_a_{audio.stem}.wav")
+    v = envelope(video, f"off_v_{video.stem}.wav")
+    best, best_r = 0, -1.0
+    for lag in range(-int(max_lag_s * rate), int(max_lag_s * rate) + 1):
+        va, aa = (v[-lag:], a) if lag < 0 else (v, a[lag:])
+        n = min(len(va), len(aa))
+        if n < 60 * rate:
+            continue
+        r = float(np.dot(va[:n] - va[:n].mean(), aa[:n] - aa[:n].mean()) / (n * va[:n].std() * aa[:n].std() + 1e-9))
+        if r > best_r:
+            best, best_r = lag, r
+    return best / rate, round(best_r, 3)
+
+
 def join_parts(sess: Session, parts: list, work: Path) -> list[dict]:
     """A lecture recorded in parts (session.yaml `parts:`): join their audio, in order, into one
     recording that becomes the session's primary audio. Each part is a file name or
-    {name: Part A, audio: file}. Returns [{name, start_s, end_s}] on the joined timeline.
-    The video, if any, is left out: a lecture in parts is read from its audio and its deck."""
+    {name: Part A, audio: file, video: file}. Returns [{name, start_s, end_s}] on the joined timeline.
+    A part's video (e.g. a screen recording of the same hour) is placed on the joined timeline by
+    matching its sound to the part's audio (video_offset); its frames are then read as the session's
+    video. A video not named in a part is left out."""
     import hashlib
     from .av import probe, require, run
     items = []
@@ -117,12 +147,15 @@ def join_parts(sess: Session, parts: list, work: Path) -> list[dict]:
         f = sess.folder / d["audio"]
         if not f.exists():
             raise FileNotFoundError(f"session.yaml part {d['audio']} not found in {sess.folder}")
-        items.append((str(d.get("name") or f"Part {chr(65 + i)}"), f))
-    fp = hashlib.sha256(json.dumps([(n, f.name, f.stat().st_size) for n, f in items]).encode()).hexdigest()[:10]
+        v = sess.folder / d["video"] if d.get("video") else None
+        if v is not None and not v.exists():
+            raise FileNotFoundError(f"session.yaml part video {d['video']} not found in {sess.folder}")
+        items.append((str(d.get("name") or f"Part {chr(65 + i)}"), f, v))
+    fp = hashlib.sha256(json.dumps([(n, f.name, f.stat().st_size) for n, f, _ in items]).encode()).hexdigest()[:10]
     out = work / f"parts-{fp}.flac"
     if not out.exists():
         cmd = [require("ffmpeg"), "-v", "error", "-y"]
-        for _, f in items:
+        for _, f, _ in items:
             cmd += ["-i", str(f)]
         chain = "".join(f"[{i}:a]" for i in range(len(items)))
         cmd += ["-filter_complex", f"{chain}concat=n={len(items)}:v=0:a=1,aformat=sample_rates=16000:channel_layouts=mono",
@@ -130,9 +163,23 @@ def join_parts(sess: Session, parts: list, work: Path) -> list[dict]:
         run(cmd)
         out.with_suffix(".tmp.flac").rename(out)
     bounds, t = [], 0.0
-    for name, f in items:
+    sess.part_videos = []
+    for name, f, v in items:
         d = sess.info.get(f.name, {}).get("duration") or probe(f)["duration"]
         bounds.append({"name": name, "file": f.name, "start_s": round(t, 2), "end_s": round(t + d, 2)})
+        if v is not None:
+            cache = work / f"offset-{hashlib.sha256(f'{f.name}|{f.stat().st_size}|{v.name}|{v.stat().st_size}'.encode()).hexdigest()[:10]}.json"
+            if cache.exists():
+                off, match = json.loads(cache.read_text())
+            else:
+                off, match = video_offset(f, v, work)
+                cache.write_text(json.dumps([off, match]))
+                for tmp in work.glob("off_*.wav"):
+                    tmp.unlink()
+            if match < 0.15:
+                off = 0.0                                       # no clear match: assume both started together
+            sess.part_videos.append({"video": v, "shift_s": round(t + off, 2), "offset_s": off, "match": match,
+                                     "part": name, "end_s": round(t + d, 2), "start_s": round(t, 2)})
         t += d
     sess.info[out.name] = probe(out)
     sess.video = None

@@ -57,6 +57,32 @@ def extract_frames(video: Path, out: Path, fps: float, fmt: str = "jpg") -> list
     return [Frame(p, i / fps) for i, p in enumerate(files)]
 
 
+def part_frames(parts: list[dict], work: Path, fps: float, fmt: str = "jpg") -> list[Frame]:
+    """The frames of a lecture's part videos, on the joined timeline, in one folder with one numbering:
+    each part's frame at video time t sits at shift_s + t (frames before or after their part are dropped)."""
+    import os
+    out = work / "frames"
+    out.mkdir(parents=True, exist_ok=True)
+    key = json.dumps([[str(p["video"]), p["shift_s"]] for p in parts] + [fps])
+    marker = out / "_parts.json"
+    if marker.exists() and json.loads(marker.read_text()).get("key") == key:
+        return [Frame(out / n, t) for n, t in json.loads(marker.read_text())["frames"]]
+    for f in out.glob("f_*"):
+        f.unlink()
+    frames, n = [], 0
+    for i, p in enumerate(parts, 1):
+        for fr in extract_frames(p["video"], work / f"frames-part{i}", fps, fmt):
+            t = fr.t + p["shift_s"]
+            if t < p.get("start_s", 0) - 1 or ("end_s" in p and t > p["end_s"] + 1):
+                continue
+            dest = out / f"f_{n:06d}.{fmt}"
+            os.link(fr.path, dest)                     # one copy on disk; redaction edits both names
+            frames.append(Frame(dest, round(t, 2)))
+            n += 1
+    marker.write_text(json.dumps({"key": key, "frames": [[f.path.name, f.t] for f in frames]}))
+    return frames
+
+
 def _small(path: Path, width: int) -> Image.Image:
     img = Image.open(path)
     if img.format == "JPEG":

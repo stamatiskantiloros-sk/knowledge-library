@@ -49,6 +49,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "video": {
         "fps": 1,
+        "redact_personal": True,             # black out names (privacy.names), emails and phones in frames, on this Mac
         "extract_resolution": "native",      # never downscaled
         "frame_format": "jpg",               # jpg (quality 2) or png (lossless, much larger)
         "dedup": "phash",

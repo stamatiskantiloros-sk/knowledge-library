@@ -747,3 +747,30 @@ def test_a_note_header_with_citation_marks_in_sources_is_cleaned():
     note = strip_fences("```markdown\n---\ntitle: M&A: valuation\nsources: [@book-1a2b, @slides-3c4d]\n---\n# M&A\n```")
     head = yaml.safe_load(note.split("---\n")[1])
     assert head["sources"] == ["book-1a2b", "slides-3c4d"] and head["title"] == "M&A: valuation"
+
+
+def test_frames_with_personal_information_are_blacked_out_before_any_model(tmp_path):
+    from PIL import Image
+    from knowlib.media.redact import redact_image
+    img = tmp_path / "frame.jpg"
+    Image.new("RGB", (400, 200), "white").save(img)
+    found = [("Session 2: Product design", (0.1, 0.8, 0.6, 0.1)),           # y from the bottom
+             ("Group 1: Maria Papadopoulos", (0.1, 0.5, 0.6, 0.1)),
+             ("write to m.pap@example.org", (0.1, 0.2, 0.6, 0.1))]
+    reasons = redact_image(img, ["Maria Papadopoulos", "Papadopoulos"], found=found)
+    assert len(reasons) == 2
+    with Image.open(img) as im:
+        assert im.getpixel((200, 30)) == (255, 255, 255)            # the title stays
+        assert max(im.getpixel((200, 90))) < 40                    # the name line is black
+        assert max(im.getpixel((200, 150))) < 40                   # the email line is black
+    clean = tmp_path / "clean.jpg"
+    Image.new("RGB", (40, 20), "white").save(clean)
+    before = clean.read_bytes()
+    assert redact_image(clean, ["Maria"], found=[("Layout types", (0, 0, 1, 1))]) == [] and clean.read_bytes() == before
+
+
+def test_dates_are_not_phone_numbers_but_phone_numbers_are():
+    from knowlib import privacy
+    assert privacy.reasons("Lecture of 2026-11-13, slides 2-1", []) == []
+    assert privacy.reasons("call +30 210 123 4567", []) == ["a phone number"]
+    assert privacy.redact("on 2026-11-13 call 210 123 4567", []) == "on 2026-11-13 call [a phone number]"

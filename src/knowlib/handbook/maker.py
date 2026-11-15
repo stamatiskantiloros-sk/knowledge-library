@@ -544,7 +544,7 @@ CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 PDF_CSS = """<style>
 body { max-width: none; font: 11pt/1.45 Georgia, serif; }
 img { max-width: 100%; display: block; margin: 1em auto; }
-figure:has(img.wide) { column-span: all; } img.kl-fig { height: auto; }
+figure:has(img.wide) { column-span: all; } img.kl-fig { height: auto; } div.wide { column-span: all; }
 table { border-collapse: collapse; margin: 1em 0; }
 th, td { border: 1px solid #bbb; padding: 3px 8px; }
 blockquote { border-left: 3px solid #bbb; margin-left: 0; padding-left: 1em; color: #333; }
