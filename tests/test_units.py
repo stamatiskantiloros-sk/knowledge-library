@@ -688,8 +688,8 @@ def test_handbook_pdf_is_named_and_dated_from_the_lecture():
     from knowlib.handbook.maker import long_date, pdf_name
     assert long_date("2026-11-10") == "10 November 2026" and long_date("") == "" and long_date("autumn") == "autumn"
     assert pdf_name("Lecture 1: Introduction to Operations Management", "2026-11-10", "Operations Management") == \
-        "Lecture 1 - Introduction to Operations Management - 2026-11-10.pdf"
-    assert pdf_name("Session 3: WACC", "2026-11-12", "Corporate Finance") == "Corporate Finance - Session 3 - WACC - 2026-11-12.pdf"
+        "Operations Management - Lecture 1 - 2026-11-10.pdf"
+    assert pdf_name("Session 3: WACC", "2026-11-12", "Corporate Finance") == "Corporate Finance - Session 3 - 2026-11-12.pdf"
     assert pdf_name('A/B "test"?', "", "") == "AB test.pdf"
 
 

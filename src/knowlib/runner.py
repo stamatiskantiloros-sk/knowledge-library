@@ -75,6 +75,9 @@ def library_files(ctx: Context):
 TOP_FILES = ("AGENTS.md", "CLAUDE.md", "INDEX.md", "glossary.md", ".ignore")
 
 
+PRESENTATION_ONLY = {"labels"}      # session.yaml keys that do not change what ingestion reads
+
+
 def item_hash(item: InputItem, hc: HashCache) -> str:
     if item.kind == "url":
         return hash_text(item.url or "")
@@ -84,8 +87,9 @@ def item_hash(item: InputItem, hc: HashCache) -> str:
         for p in sorted(item.paths, key=lambda p: p.name):
             h.update(p.name.encode())
             h.update(hc.file(p).encode())
-        if item.sidecar:
-            h.update(json.dumps(item.sidecar, sort_keys=True, default=str).encode())
+        if item.sidecar:                    # labels only name documents: `knowlib match-screens` redoes them
+            kept = {k: v for k, v in item.sidecar.items() if k not in PRESENTATION_ONLY}
+            h.update(json.dumps(kept, sort_keys=True, default=str).encode())
         return h.hexdigest()
     return hc.file(item.path)
 

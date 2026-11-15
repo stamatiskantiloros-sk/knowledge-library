@@ -424,6 +424,25 @@ def cmd_figures(args) -> int:
     return 0
 
 
+def cmd_match_screens(args) -> int:
+    """Match each screen of a lecture already ingested to the page of the folder's PDFs it shows
+    (on this Mac), so its handbook cites and shows the documents. Ingestion does this for new lectures."""
+    import yaml
+    from .media.screenmatch import relabel
+    root = _lib(args)
+    md = Path(args.lecture).expanduser().resolve()
+    meta = yaml.safe_load(md.read_text(encoding="utf-8").split("---", 2)[1]) or {}
+    folder = root / str(meta["original"]) if meta.get("original") else md.parent
+    if not folder.is_dir():
+        folder = md.parent
+    r = relabel(md, folder)
+    found = r["screens"] - r.get("none", 0)
+    print(f"{found} of {r['screens']} screens matched to a document page "
+          + ", ".join(f"{v} by {k}" for k, v in r.items() if k not in ("screens", "none"))
+          + f"; {r.get('none', 0)} showed no document (cited by their time in class)")
+    return 0
+
+
 def cmd_names(args) -> int:
     """Names said in class, as a proposal for privacy.names (only in speech) and privacy.spoken_only
     (also in the materials: replaced only in what people say, never in a book or on a slide)."""
@@ -590,6 +609,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--check", action="store_true", help="check every role, including image detail and context")
     s.set_defaults(fn=cmd_models)
     lib(sub.add_parser("pending")).set_defaults(fn=cmd_pending)
+    s = lib(sub.add_parser("match-screens", help="match a recorded lecture's screens to the PDF pages they show"))
+    s.add_argument("lecture", help="the lecture's Markdown file")
+    s.set_defaults(fn=cmd_match_screens)
     s = lib(sub.add_parser("names", help="names said in class: a proposal for privacy.names, to read and cut before --write"))
     s.add_argument("--write", action="store_true", help="add the proposed names (minus --skip) to the config")
     s.add_argument("--skip", nargs="*", help="names to leave out when writing")

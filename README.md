@@ -107,6 +107,7 @@ knowlib handbook -L DIR --prepare --output OUT --only "<lecture>"   # the brief 
 knowlib handbook -L DIR --finish --output OUT                       # check the draft, write the book and the PDF
 knowlib figures make OUT/<lecture>/figures   # redraw slides in the handbook's style, for your approval
 knowlib style -L DIR                # pick the handbook's look in the browser
+knowlib match-screens -L DIR LECTURE.md  # match a recorded lecture's screens to the PDF pages they show
 knowlib reprocess -L DIR --where transcription.model=<old>   # redo what an older model produced
 ```
 

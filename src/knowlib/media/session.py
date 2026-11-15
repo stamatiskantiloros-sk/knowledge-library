@@ -9,6 +9,7 @@ session.yaml (all keys optional):
     primary_audio: recorder.wav         # the best recording; otherwise picked by SNR
     video: lecture.mp4                 # if the folder has several videos
     slides: slides.pdf                 # the deck, ingested alongside and linked
+    labels: {Assignment-2026.pdf: Productivity assignment}  # how handbooks name the folder's documents
     local_only: true                   # block all API calls for this session
     fps: 2                             # e.g. fast screen recording / live coding
     tags: [mba, finance]

@@ -270,10 +270,24 @@ class MediaSessionIngestor(Ingestor):
             else:
                 flags.append(f"slides file {item.sidecar['slides']} named in session.yaml was not ingested")
 
+        # ---- the documents the screens show ----------------------------------------------
+        # A screen recording is a guide; the decks and handouts in the folder are the source. Each kept
+        # screen is matched, locally, to the page it shows, so the handbook cites and shows that page.
+        matches = []
+        if kept and cfg["video"].get("match_documents", True):
+            from ..media import screenmatch
+            docs = screenmatch.load_docs(sess.folder, item.sidecar.get("labels"))
+            if docs:
+                matches = screenmatch.match_screens(
+                    [(k.slide_text, " ".join(r.get("text", "") for r in (k.ocr or {}).get("backends", {}).values()))
+                     for k in kept], docs)
+                stats["documents"] = {"matched": sum(1 for m in matches if m), "screens": len(kept),
+                                      "files": [d.path.name for d in docs]}
+
         # ---- write the source ----------------------------------------------------------
         w = ctx.writer(sid)
         try:
-            body = self._render(sess, segs, kept, w, cfg, flags, stats) + self._dropped(dropped, w)
+            body = self._render(sess, segs, kept, w, cfg, flags, stats, matches) + self._dropped(dropped, w)
             if parts:
                 stats["parts"] = parts
                 body = mark_parts(body, parts)
@@ -381,7 +395,7 @@ class MediaSessionIngestor(Ingestor):
             flags.append(f"slides matched weakly, check where they start and end: {', '.join(map(str, weak))}")
         return "\n".join(lines)
 
-    def _render(self, sess, segs, kept, w: SourceWriter, cfg, flags, stats) -> str:
+    def _render(self, sess, segs, kept, w: SourceWriter, cfg, flags, stats, matches=None) -> str:
         if not kept and self._deck and segs:
             try:
                 return self._render_aligned(sess, segs, w, flags, stats)
@@ -430,6 +444,10 @@ class MediaSessionIngestor(Ingestor):
             lines += ["", f"## Slide {i} ({fmt_ts(k.start)}–{fmt_ts(end)})"]
             img = f"assets/view/frame_{i:03d}.jpg" if with_view else f"assets/{name}"
             lines.append(f"![Slide {i}]({img})" + (f" · [full resolution](assets/{name})" if with_view else ""))
+            if matches and (m := matches[i - 1]):
+                from ..media.screenmatch import from_line, page_image
+                page = page_image(m.doc, m.page, w.assets / "pages")
+                lines.append(from_line(m, f"assets/pages/{page.name}"))
             if k.ocr.get("flag"):
                 det = []
                 for b, r in k.ocr["backends"].items():

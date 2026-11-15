@@ -25,6 +25,7 @@ from .. import progress
 from ..contract import slugify
 from ..manifest import Manifest
 from ..media.ocr import numbers
+from ..media.screenmatch import FROM
 from .. import privacy
 from ..providers import get_vision_provider, parse_json, release_all
 from ..runner import open_library, process
@@ -71,9 +72,9 @@ What the book is
 
 Slides: text or picture, never both
 4. Show a slide (write [[slide N]] on its own line) only where its picture carries what words cannot do as well: a model, a chart, a process or flow diagram, a table of data. The text around it then adds only what the picture does not say: the point, and what the lecturer said about it. A slide that is a list, a definition or a statement is written into the text and not shown.
-5. Show each slide at its clearest: look at the slides before and after it, and pick the step where everything is visible and nothing covers it (not a dimmed build or a slide with an overlay); where a later slide repeats an earlier one and adds to it, show only the later one.
-6. Cite the slides. After a definition, figure or fact taken from a slide, add a short "(slide N)", sparingly: once per fact, not after every sentence. End each section with its sources in italics on a line of their own: *Slides 10–13*. Never write "on the slide", "the slide says" or "Slide:": the citation and the arrangement show where things come from.
-7. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
+5. Show each slide at its clearest: look at the slides before and after it, and pick the step where everything is visible and nothing covers it (not a dimmed build or a slide with an overlay); where a later slide repeats an earlier one and adds to it, show only the later one. A slide with a "Page" line is shown as that page, drawn from the document, not as the screen.
+6. Cite the slides by their numbers in this brief (a page under "Pages no screen captured" as its heading names it). After a definition, figure or fact taken from a slide, add a short "(slide N)", sparingly: once per fact, not after every sentence. End each section with its sources in italics on a line of their own: *Slides 10–13*. The finish step turns each number into the document and page the screen showed ("deck 2-2, slide 16"), or the time in class for a screen that showed no document: never write a document's own page numbers yourself. Never write "on the slide", "the slide says" or "Slide:": the citation and the arrangement show where things come from.
+7. Where a slide has its document page ("Page" line, and the page's text below the reading), the page is the source: take its text, numbers and tables from the page, complete, and use the screen only for what the lecturer showed and when. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
 
 Accuracy
 8. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said. Use LaTeX for formulas and Markdown tables with the same number of cells in every row.
@@ -143,6 +144,10 @@ class Slide:
     from_ocr: bool = False
     ocr: str = ""
     discussed: bool = True
+    cite: str = ""                       # the document page the screen shows: "deck 2-2, slide 16"
+    document: str = ""                   # that document's file name
+    page: int = 0
+    page_image: str = ""                 # the page drawn from the document, relative to the lecture file
 
     def usable(self) -> bool:
         """A slide with no reading and nothing said is an opening image or a failed reading."""
@@ -150,7 +155,7 @@ class Slide:
 
     def material(self) -> str:
         text = "" if self.from_ocr else self.text
-        parts = [f"[Slide {self.n}, {self.start}]"]
+        parts = [f"[Slide {self.n}, {self.start}" + (f" · {self.cite}]" if self.cite else "]")]
         if text:
             parts.append(f"On the slide:\n{text}")
         if self.caption:
@@ -168,6 +173,7 @@ class Lecture:
     folder: Path
     slides: list[Slide] = field(default_factory=list)
     date: str = ""                       # when the lecture took place (original_date, from the recording)
+    original: str = ""                   # the folder it was ingested from, relative to the library
 
 
 def _between(block: str, start: str, ends: tuple[str, ...]) -> str:
@@ -189,7 +195,7 @@ def parse_source(path: Path, source_id: str = "", key: str = "") -> Lecture:
     meta = yaml.safe_load(raw.split("---", 2)[1]) or {}
     body = raw.split("---", 2)[2].split("\n## Dropped frames", 1)[0]   # not slides
     lecture = Lecture(source_id or folder.name, key, str(meta.get("title", folder.name)), folder,
-                      date=str(meta.get("original_date") or "")[:10])
+                      date=str(meta.get("original_date") or "")[:10], original=str(meta.get("original") or ""))
     labels = ("**OCR text", "**Figure:**", "**Spoken:**")
     head, *blocks = re.split(r"^## Slide ", body, flags=re.M)
     before = head.split("## Before the first slide")[1].split("\n", 1)[-1].strip() if "## Before the first slide" in head else ""
@@ -198,6 +204,7 @@ def parse_source(path: Path, source_id: str = "", key: str = "") -> Lecture:
         if not m:
             continue
         frame = re.search(r"\[full resolution\]\(([^)]+)\)", b) or re.search(r"!\[[^\]]*\]\(([^)]+)\)", b)
+        src = FROM.search(b)
         lecture.slides.append(Slide(
             int(m[1]), m[2], m[3],
             text=_between(b, "**On slide (OCR):**", labels) or _between(b, "**On slide:**", labels),
@@ -206,6 +213,8 @@ def parse_source(path: Path, source_id: str = "", key: str = "") -> Lecture:
             frame=frame.group(1) if frame else "",
             flagged="**OCR check:**" in b, from_ocr="**On slide (OCR):**" in b,
             discussed="*Not discussed in the recording.*" not in b,
+            cite=src["cite"] if src else "", document=src["file"] if src else "",
+            page=int(src["page"]) if src else 0, page_image=(src["image"] or "") if src else "",
             ocr=" ".join(re.findall(r"\*\*OCR text[^\n]*\n(.*?)(?=\n\*\*|\Z)", b, re.S))))
     if before and lecture.slides:
         lecture.slides[0].spoken = f"{before} {lecture.slides[0].spoken}".strip()
@@ -532,7 +541,9 @@ def _place_figures(text: str, part: list[Slide], lecture: Lecture, out: Path, is
                 return f"![Slide {s.n}, {s.start}](assets/{name}){{{attrs}}}"
             if kind != "keep-slide":
                 issues.append(f"slide {s.n}: figure verdict {kind!r} has nothing to place; the slide is shown")
-        src = lecture.folder / s.frame
+        src = lecture.folder / (s.page_image or s.frame)     # the document's page where the screen showed one
+        if not src.exists():
+            src = lecture.folder / s.frame
         (out / "assets").mkdir(exist_ok=True)
         shutil.copy2(src, out / "assets" / src.name)
         return f"![Slide {s.n}, {s.start}](assets/{src.name})"
@@ -568,9 +579,12 @@ def long_date(iso: str) -> str:
 
 
 def pdf_name(title: str, date: str = "", course: str = "") -> str:
-    """The PDF's file name from the lecture: 'Lecture 1 - Introduction to Operations Management - 2026-11-10.pdf'.
-    The course goes first when the title does not already name it."""
-    name = re.sub(r"\s*:\s*", " - ", title.strip()) or "handbook"
+    """The PDF's file name: the course, the lecture's label and its date,
+    'Operations Management - Lecture 2 - 2026-11-13.pdf'. The label is the title's part before a colon
+    ('Lecture 2: Product, Service and Process Design'); a title without one is used whole."""
+    title = title.strip()
+    label, colon, _rest = title.partition(":")
+    name = (label.strip() if colon and label.strip() else title) or "handbook"
     if course and course.casefold() not in name.casefold():
         name = f"{course} - {name}"
     if date:
@@ -692,7 +706,8 @@ def _export(out: Path, cfg: dict | None = None, root: Path | None = None, *, tit
         _sign_last_page(pdf, sig if isinstance(sig, list) else str(sig),
                         size=float(hb.get("last_page_signature_size") or 7.2))
     for old in out.glob("*.pdf"):                         # earlier builds under another name
-        if old != pdf and (old.name == "handbook.pdf" or old.name.startswith(pdf.name.rsplit(" - ", 1)[0])):
+        if old != pdf and (old.name == "handbook.pdf" or old.name.startswith(pdf.name.rsplit(" - ", 1)[0])
+                           or (date and old.name.endswith(f" - {date}.pdf"))):   # the same lecture, named the old way
             old.unlink()
     return str(pdf)
 
@@ -780,7 +795,10 @@ def brief(lecture: Lecture, materials: list[tuple[str, str]], *, notes_dir: Path
     rules = BRIEF_RULES.replace("the lecturer", speaker).replace("The lecturer", speaker[:1].upper() + speaker[1:])
     lines = [f"# Brief: {lecture.title}", "", rules, "", "## Slides", ""]
     for s in lecture.slides:
-        lines += [f"### Slide {s.n} ({s.start}–{s.end})", "", f"Image: {lecture.folder / s.frame}"]
+        lines += [f"### Slide {s.n} ({s.start}–{s.end})" + (f" · {s.cite}" if s.cite else ""), "",
+                  f"Image: {lecture.folder / s.frame}"]
+        if s.cite:
+            lines.append(f"Page ({s.cite}, the source): {lecture.folder / s.page_image if s.page_image else s.document}")
         if not s.discussed:
             lines.append("Not discussed in the recording")
         if s.flagged:
@@ -788,8 +806,11 @@ def brief(lecture: Lecture, materials: list[tuple[str, str]], *, notes_dir: Path
         if s.from_ocr:
             lines.append("The model's reading failed: this text is raw OCR, read the image")
         lines += ["", s.material(), ""]
+        if s.cite and (page := document_page(lecture, s)):
+            lines += [f"The page itself ({s.cite}), complete:", page, ""]
         if s.ocr:
             lines += [f"Classic OCR: {s.ocr}", ""]
+    lines += uncaptured_pages(lecture)
     others = [m for m in materials if Path(m[3]).parent != Path(lecture.folder)]   # its own deck is above already
     passages = relevant_passages("\n".join(s.material() for s in lecture.slides), [m[:2] for m in others], top=6)
     lines += ["## Course-material passages", ""]
@@ -834,6 +855,7 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     cfg = _library_config(folder)
     hb = cfg.get("handbook") or {}
     book = _place_figures(draft, lecture.slides, lecture, out, issues)
+    book = cite_sources(book, lecture.slides, hb.get("show_times", True))
     if not hb.get("show_times", True):
         book = without_times(book)
     (out / "handbook.md").write_text(book, encoding="utf-8")
@@ -849,6 +871,178 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     (out / "review.md").write_text("\n".join(review) + "\n", encoding="utf-8")
     return {"lecture": lecture.title, "issues": len(issues), "flagged": len(flagged),
             "output": str(out), "pdf": _export(out, cfg, _library_root(folder), title=lecture.title, date=lecture.date)}
+
+
+def document_page(lecture: Lecture, s: Slide) -> str:
+    """The text of the document page a screen showed, from the PDF beside the lecture (or in the folder
+    the lecture was ingested from)."""
+    import pymupdf
+    root = _library_root(lecture.folder)
+    for folder in [lecture.folder, *([root / lecture.original] if root and lecture.original else [])]:
+        pdf = Path(folder) / s.document
+        if s.document and pdf.exists():
+            try:
+                doc = pymupdf.open(pdf)
+                return doc[s.page - 1].get_text().strip() if 1 <= s.page <= doc.page_count else ""
+            except Exception:  # noqa: BLE001 - the page image and the screen remain
+                return ""
+    return ""
+
+
+def uncaptured_pages(lecture: Lecture) -> list[str]:
+    """The brief's list of document pages that fall between the pages the screens showed but that no
+    kept screen captured (scrolled past, or on screen while another frame was kept): sources too."""
+    seen: dict[str, dict] = {}
+    for s in lecture.slides:
+        if s.cite and (pm := PAGE.match(s.cite)):
+            d = seen.setdefault(s.document, {"label": pm["label"], "unit": pm["unit"], "pages": set(), "slide": s})
+            d["pages"].add(s.page)
+    out = []
+    for name, d in seen.items():
+        lo, hi = min(d["pages"]), max(d["pages"])
+        for page in range(lo, hi + 1):
+            if page in d["pages"]:
+                continue
+            probe = Slide(0, "", "", document=name, page=page)
+            text = document_page(lecture, probe)
+            out += [f"### {d['label']}, {d['unit']} {page} (no screen captured it)", "",
+                    text or "(No text: a picture. Open the document to see it.)", ""]
+    if out:
+        out = ["## Pages no screen captured", "",
+               "Pages of the documents the lecture went through that no kept screen shows. They are sources "
+               "too: cite one as its heading names it, \"(deck 2-1, slide 4)\", also in a section's sources "
+               "line (*Slides 6–7; deck 2-1, slide 4*).", ""] + out
+    return out
+
+
+SCREEN_NUMS = r"\d+(?![\d:])(?:\s*[–-]\s*\d+(?![\d:]))?"
+TIME = r"\d{1,2}:\d{2}(?::\d{2})?"
+CITATION = re.compile(rf"(?<!, )\b(?P<word>[Ss]lides?) (?P<nums>{SCREEN_NUMS}(?:,\s*{SCREEN_NUMS})*)"
+                      rf"(?P<time>, {TIME}(?:–{TIME})?)?")     # "deck 2-1, slide 4" is a page, not a screen
+PAGE_CITE = re.compile(r"(?P<label>[^;()*\[\]\n]+?), (?P<unit>slide|page)s? (?P<runs>\d+(?:–\d+)?(?:, \d+(?:–\d+)?)*)$")
+PAGE = re.compile(r"^(?P<label>.+), (?P<unit>slide|page)s? (?P<page>\d+)$")
+
+
+MIN_SHOWN_S = 20       # a screen on for less, inside a cited range, was passed through (a flick back, a tab)
+
+
+def _shown_s(s: Slide) -> float:
+    def sec(t: str) -> float:
+        parts = [float(x) for x in t.split(":")] if t else [0.0]
+        return sum(x * 60 ** i for i, x in enumerate(reversed(parts)))
+    return sec(s.end) - sec(s.start)
+
+
+def _in_range(span: range, by_n: dict[int, Slide]) -> list[int]:
+    """The screens a cited range stands for: those on for a while, and short ones that show a page of the
+    same run (a build, a scroll). A short screen of another document or of a page outside the run was
+    passed through on the way elsewhere (a flick back to an earlier slide, a tab, the next deck)."""
+    long = [n for n in span if n in by_n and _shown_s(by_n[n]) >= MIN_SHOWN_S]
+    if not long:
+        return list(span)
+    runs: dict[str, list[int]] = {}
+    for n in long:
+        if pm := PAGE.match(by_n[n].cite):
+            runs.setdefault(pm["label"], []).append(int(pm["page"]))
+    out = []
+    for n in span:
+        if n in long:
+            out.append(n)
+        elif n in by_n and (pm := PAGE.match(by_n[n].cite)) and pm["label"] in runs \
+                and min(runs[pm["label"]]) - 1 <= int(pm["page"]) <= max(runs[pm["label"]]) + 1:
+            out.append(n)
+    return out
+
+
+def cite_sources(text: str, slides: list[Slide], show_times: bool = True) -> str:
+    """'(slide 87)', '*Slides 84–87*' and captions name the screens of the recording; a student needs
+    the document and page each screen showed: '(deck 2-2, slide 16)', '*Deck 2-2, slides 13–16*'.
+    A range leaves out screens passed through on the way elsewhere (see _in_range); a screen
+    that showed no document is cited as shown in class (at its time) only when nothing else is cited
+    with it. A lecture whose screens
+    were not matched to documents (or that was matched to its deck from the audio) is left as it is."""
+    by_n = {s.n: s for s in slides}
+    if not any(s.cite for s in slides):
+        return text
+
+    def cite(m: re.Match) -> str:
+        nums: list[int] = []
+        for a, b in re.findall(r"(\d+)(?:\s*[–-]\s*(\d+))?", m["nums"]):
+            if not b:
+                nums.append(int(a))
+                continue
+            nums += _in_range(range(int(a), int(b) + 1), by_n)
+        groups: dict[tuple[str, str], list[int]] = {}
+        times: list[str] = []
+        for n in nums:
+            s = by_n.get(n)
+            if s and (pm := PAGE.match(s.cite)):
+                groups.setdefault((pm["label"], pm["unit"]), []).append(int(pm["page"]))
+            elif s:
+                times.append(s.start)
+        parts = []
+        for (label, unit), pages in groups.items():
+            pages = sorted(set(pages))
+            runs, a = [], pages[0]
+            for x, y in zip(pages, pages[1:] + [None]):
+                if y != x + 1:
+                    runs.append(f"{a}" if a == x else f"{a}–{x}")
+                    a = y
+            parts.append(f"{label}, {unit}{'s' if len(pages) > 1 else ''} {', '.join(runs)}")
+        if times and not parts:                 # a document page says more than "shown in class"
+            parts.append("shown in class" + (f" at {', '.join(dict.fromkeys(times))}" if show_times else ""))
+        if not parts:
+            return m[0]
+        out = "; ".join(parts)                  # a recording time after the numbers is replaced too
+        return out[:1].upper() + out[1:] if m["word"][0] == "S" else out
+
+    return _merge_citations(CITATION.sub(cite, text))
+
+
+def _runs(pages: list[int]) -> str:
+    pages = sorted(set(pages))
+    runs, a = [], pages[0]
+    for x, y in zip(pages, pages[1:] + [None]):
+        if y != x + 1:
+            runs.append(f"{a}" if a == x else f"{a}–{x}")
+            a = y
+    return ", ".join(runs)
+
+
+def _merge_citations(text: str) -> str:
+    """'(deck 2-1, slide 3; deck 2-1, slide 4)' -> '(deck 2-1, slides 3–4)': the pages of one document
+    together, in a parenthesis, a caption or a section's italic sources line."""
+    def merge(m: re.Match) -> str:
+        inner = m[2]
+        parts = inner.split("; ")
+        groups: dict[tuple[str, str], list[int]] = {}
+        rest = []
+        for part in parts:
+            pm = PAGE_CITE.fullmatch(part.strip())
+            if not pm:
+                rest.append(part)
+                continue
+            label = pm["label"].strip()
+            key = (label.lower(), pm["unit"])
+            pages = []
+            for a, b in re.findall(r"(\d+)(?:–(\d+))?", pm["runs"]):
+                pages += range(int(a), int(b or a) + 1)
+            if key not in groups:
+                groups[key] = []
+                rest.append(key)
+                groups[key + ("label",)] = label        # first spelling kept
+            groups[key] += pages
+        if not groups:
+            return m[0]
+        out = []
+        for r in rest:
+            if isinstance(r, tuple):
+                pages = groups[r]
+                out.append(f"{groups[r + ('label',)]}, {r[1]}{'s' if len(set(pages)) > 1 else ''} {_runs(pages)}")
+            else:
+                out.append(r)
+        return m[1] + "; ".join(out) + m[3]
+    return re.sub(r"(\(|^\*|Table: |!\[)([^()*\]\n]*?;[^()*\]\n]*?)(\)|\*$|$|\])", merge, text, flags=re.M)
 
 
 def _library_root(md: Path) -> Path | None:

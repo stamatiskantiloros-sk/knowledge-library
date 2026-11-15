@@ -50,6 +50,7 @@ DEFAULTS: dict[str, Any] = {
     "video": {
         "fps": 1,
         "redact_personal": True,             # black out names (privacy.names), emails and phones in frames, on this Mac
+        "match_documents": True,             # match each kept screen to the page of a PDF in the lecture folder it shows (local)
         "extract_resolution": "native",      # never downscaled
         "frame_format": "jpg",               # jpg (quality 2) or png (lossless, much larger)
         "dedup": "phash",
