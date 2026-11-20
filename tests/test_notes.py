@@ -251,3 +251,124 @@ def test_a_slide_cited_at_a_time_gives_the_slide_and_the_passage_at_that_time(tm
 def test_latex_thousands_and_quotes_closing_on_punctuation():
     from knowlib.notecheck import number_values
     assert number_values(r"$167{,}664 and 83{,}832") == {167664.0, 83832.0}
+
+
+TALK = """---
+title: Lecture 2
+---
+# Lecture 2
+
+## Slide 1 (00:00–02:00) · Part A
+![Slide 1](assets/f1.jpg) · [full resolution](assets/f1.jpg)
+> **OCR check:** the vision model's text and classic OCR disagree
+
+**On slide:**
+
+Escondido Power Plant: PPA rate 28 $/MWh
+
+**OCR text (apple-vision):**
+
+Chrome File Edit View
+
+**Spoken:**
+
+[00:10] In general the plant earns 28 dollars per megawatt hour, but not when it is down.
+[01:20] A student team presented Nvidia.
+
+## Slide 2 (02:00–04:00) · Part A
+
+**On slide:**
+
+Working capital
+
+**Spoken:**
+
+[02:30] Working capital is the money tied up in receivables and inventory.
+
+## Dropped frames
+
+- 05:00: nothing
+"""
+
+SHEET = """---
+title: Exhibits
+---
+# Exhibits
+
+## Contents
+
+- Exhibit 1
+
+## Exhibit 1
+
+| Year | Output |
+|---|---|
+| 2001 | 4380 |
+
+## Loan
+
+| Rate | 7% |
+"""
+
+
+def test_write_notes_cuts_whole_sources_into_citable_places(tmp_path):
+    from knowlib.writenotes import parse_plan, pick_units, source_units, unit_text
+    keys, themes = parse_plan("- BR = brealey-1a\n\n## A. Lecture 2\nSources: lecture-2, exhibits\n"
+                              "- escondido — the case\n\n## B. Books\nChapters: BR 5\n- npv — NPV\n")
+    assert themes[0]["sources"] == ["lecture-2", "exhibits"] and themes[0]["chapters"] == []
+    assert themes[1]["sources"] == [] and themes[1]["chapters"] == [("BR", 5, None)]
+    for sid, text in (("lecture-2", TALK), ("exhibits", SHEET)):
+        (tmp_path / sid).mkdir()
+        (tmp_path / sid / "source.md").write_text(text)
+    talk, sheet = Source(tmp_path / "lecture-2"), Source(tmp_path / "exhibits")
+    units = source_units(talk)
+    assert [u["loc"] for u in units] == ["slide 1", "slide 2"] and units[0]["header"] == "slide 1, 00:00–02:00"
+    assert "28 $/MWh" in units[0]["text"] and "[00:10] In general" in units[0]["text"]
+    assert "Chrome File" not in units[0]["text"] and "OCR check" not in units[0]["text"]   # screen noise left out
+    assert "Escondido" in units[0]["preview"] and "In general the plant" in units[0]["preview"]
+    assert [u["loc"] for u in source_units(sheet)] == ["§ Exhibit 1", "§ Loan"]           # no Contents
+    assert pick_units(units, ["slide 1-2"]) == [0, 1] and pick_units(source_units(sheet), ["§ loan"]) == [1]
+    text = unit_text(talk, units, [1], 10_000)
+    assert text.startswith("[@lecture-2, slide 2, 02:00–04:00]\n## Slide 2") and "receivables" in text
+    for loc in ("slide 1, 00:10", "slide 2, 02:30"):                  # what the prompt asks for, check-notes reads
+        assert talk.region(loc)[1] == ""
+    assert sheet.region("§ Loan")[1] == ""
+
+
+def test_write_notes_writes_a_note_from_a_lecture(library, monkeypatch):
+    from knowlib import writenotes
+    (library / "sources" / "lecture-2").mkdir()
+    (library / "sources" / "lecture-2" / "source.md").write_text(TALK)
+    m = json.loads((library / "manifest.json").read_text())
+    m["entries"]["lecture-2"] = {"source_id": "lecture-2", "status": "done", "updated_at": "2026-11-01T10:00:00"}
+    (library / "manifest.json").write_text(json.dumps(m))
+    plan = library / "notes" / "_plan.md"
+    plan.write_text("## A. Lecture 2\nSources: lecture-2\n- working-capital — working capital in the lecture\n")
+    prompts = []
+
+    class Fake:
+        model, is_local, last_finish = "fake", False, "stop"
+
+        def generate(self, images, prompt, **kw):
+            prompts.append(prompt)
+            if prompt.startswith("You are planning"):
+                return '{"parts": {"lecture-2": ["slide 2"]}}'
+            return ("---\ntitle: Working capital\naliases: []\nsources: [lecture-2]\nupdated: 2026-11-20\n---\n"
+                    "# Working capital\n\nSummary [@lecture-2, slide 2, 02:30].\n\n## Key points\n"
+                    "- Working capital is the money tied up in receivables and inventory [@lecture-2, slide 2, 02:30].\n")
+
+        def close(self):
+            pass
+    monkeypatch.setattr(writenotes, "get_vision_provider", lambda section, cfg: Fake())
+    done = writenotes.run(library, plan, themes_wanted=[], notes_wanted=[], writer={"backend": "fake"}, force=False)
+    assert done == ["working-capital"]
+    assert "Material:\n[@lecture-2, slide 1, 00:00–02:00]" in prompts[0]      # small: every slide, no picking
+    assert "never \"not X\"" in prompts[0] and "a student presentation" in prompts[0]
+    assert "receivables" in (library / "notes" / "working-capital.md").read_text()
+    # too big to send whole: the model picks from the list of slides, and only those are sent
+    prompts.clear()
+    done = writenotes.run(library, plan, themes_wanted=[], notes_wanted=[], force=True,
+                          writer={"backend": "fake", "max_prompt_chars": 400})
+    assert done == ["working-capital"] and prompts[0].startswith("You are planning")
+    assert "- slide 1, 00:00–02:00: Escondido" in prompts[0]
+    assert "[@lecture-2, slide 2, 02:00–04:00]" in prompts[1] and "slide 1, 00:00" not in prompts[1]
