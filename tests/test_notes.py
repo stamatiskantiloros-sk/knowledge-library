@@ -322,7 +322,7 @@ def test_write_notes_cuts_whole_sources_into_citable_places(tmp_path):
         (tmp_path / sid / "source.md").write_text(text)
     talk, sheet = Source(tmp_path / "lecture-2"), Source(tmp_path / "exhibits")
     units = source_units(talk)
-    assert [u["loc"] for u in units] == ["slide 1", "slide 2"] and units[0]["header"] == "slide 1, 00:00–02:00"
+    assert [u["loc"] for u in units] == ["slide 1, 00:00–02:00", "slide 2, 02:00–04:00"]
     assert "28 $/MWh" in units[0]["text"] and "[00:10] In general" in units[0]["text"]
     assert "Chrome File" not in units[0]["text"] and "OCR check" not in units[0]["text"]   # screen noise left out
     assert "Escondido" in units[0]["preview"] and "In general the plant" in units[0]["preview"]
@@ -330,6 +330,25 @@ def test_write_notes_cuts_whole_sources_into_citable_places(tmp_path):
     assert pick_units(units, ["slide 1-2"]) == [0, 1] and pick_units(source_units(sheet), ["§ loan"]) == [1]
     text = unit_text(talk, units, [1], 10_000)
     assert text.startswith("[@lecture-2, slide 2, 02:00–04:00]\n## Slide 2") and "receivables" in text
+    # a slide with a long stretch of speech comes in parts, each with its times, so its later teaching can be picked
+    from knowlib import writenotes
+    long_talk = TALK.replace("[02:30] Working capital is the money tied up in receivables and inventory.",
+                             "\n".join(f"[{2 + k // 60:02d}:{k % 60:02d}] " + ("Working capital is cash tied up. " if k == 50 else "Filler words. ") * 20
+                                        for k in range(0, 60, 5)))
+    (tmp_path / "long").mkdir()
+    (tmp_path / "long" / "source.md").write_text(long_talk)
+    monkey = writenotes.SPEECH_PART
+    writenotes.SPEECH_PART = 1000
+    try:
+        parts = writenotes.source_units(Source(tmp_path / "long"))
+    finally:
+        writenotes.SPEECH_PART = monkey
+    later = [u for u in parts if u["slide"] == 2]
+    assert len(later) > 2 and later[0]["header"] == "slide 2, 02:00–02:10" and "**On slide:**" in later[0]["text"]
+    assert later[1]["text"].startswith("## Slide 2 (continued)") and "On slide" not in later[1]["text"]
+    assert any("Working capital is cash tied up" in u["text"] for u in later[1:]) and later[1]["preview"].startswith("Filler")
+    assert pick_units(parts, ["slide 2"]) == [i for i, u in enumerate(parts) if u["slide"] == 2]
+    assert pick_units(parts, [later[1]["header"]]) == [parts.index(later[1])]
     for loc in ("slide 1, 00:10", "slide 2, 02:30"):                  # what the prompt asks for, check-notes reads
         assert talk.region(loc)[1] == ""
     assert sheet.region("§ Loan")[1] == ""

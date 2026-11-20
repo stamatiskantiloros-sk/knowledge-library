@@ -240,20 +240,46 @@ def _slide_text(block: str, cap: int = 1500) -> str:
     return "\n".join(out).strip()
 
 
+SPEECH_PART = 3000          # characters of what was said per part of a long slide
+
+
+def _speech_parts(spoken: str, size: int | None = None) -> list[list[str]]:
+    """What was said on a slide in parts of about `size` characters, cut between transcript lines."""
+    size = size or SPEECH_PART
+    parts, cur, n = [], [], 0
+    for line in [l for l in spoken.strip().splitlines() if l.strip()]:
+        if cur and n + len(line) > size:
+            parts.append(cur)
+            cur, n = [], 0
+        cur.append(line)
+        n += len(line) + 1
+    return parts + [cur] if cur else parts
+
+
 def source_units(src: Source) -> list[dict]:
-    """The places of a source a note can cite, in order: [{loc, header, preview, text}].
-    A lecture by slide, a paged document by page, a folder of images by image, anything else by its
-    ## sections, or whole."""
+    """The places of a source a note can cite, in order: [{loc, header, preview, text, slide}].
+    A lecture by slide (a slide with a long stretch of speech in parts, each with its times), a paged
+    document by page, a folder of images by image, anything else by its ## sections, or whole."""
     units = []
     if src.slides:
         for n, (block, *_rest) in sorted(src.slides.items()):
             text = _slide_text(block)
             span = re.search(r"\(([\d:]+)[–-]([\d:]+)\)", block.split("\n", 1)[0])
-            spoken = text.split("**Spoken:**", 1)[1] if "**Spoken:**" in text else ""
-            shown = re.search(r"\*\*(?:From|On slide):\*\*\s*(.{0,90})", text, re.S)
-            preview = " ".join(((shown[1] if shown else "") + " | " + re.sub(r"\[[\d:]+\]", "", spoken)[:160]).split())
-            units.append({"loc": f"slide {n}", "header": f"slide {n}" + (f", {span[1]}–{span[2]}" if span else ""),
-                          "preview": preview, "text": text})
+            shown_part, _, spoken = text.partition("**Spoken:**")
+            shown = re.search(r"\*\*(?:From|On slide):\*\*\s*(.{0,90})", shown_part, re.S)
+            parts = _speech_parts(spoken) or [[]]
+            for k, lines in enumerate(parts):
+                said = "\n".join(lines)
+                times = re.findall(r"^\[([\d:]+)\]", said, re.M)
+                if len(parts) == 1:
+                    header = f"slide {n}" + (f", {span[1]}–{span[2]}" if span else "")
+                else:
+                    header = f"slide {n}, {times[0]}–{times[-1]}" if times else f"slide {n}, part {k + 1}"
+                body = (shown_part.strip() + ("\n**Spoken:**\n" + said if said else "")) if k == 0 else \
+                    f"## Slide {n} (continued)\n**Spoken:**\n{said}"
+                lead = (shown[1] + " | ") if shown and k == 0 else ""
+                preview = " ".join((lead + re.sub(r"\[[\d:]+\]", "", said)[:240]).split())
+                units.append({"loc": header, "header": header, "preview": preview, "text": body, "slide": n})
         return units
     if src.pages:
         for p in src.page_order:
@@ -274,22 +300,28 @@ def source_units(src: Source) -> list[dict]:
 
 
 def pick_units(units: list[dict], wanted: list[str]) -> list[int]:
-    """Indexes of the units a model asked for: "slide 3-9", "p. 2-4", "image 1", "§ Heading"."""
+    """Indexes of the units a model asked for: "slide 3-9" (every part of those slides), a part as listed
+    ("slide 120, 2:07:10–2:12:40"), "p. 2-4", "image 1", "§ Heading"."""
     by_loc = {u["loc"].lower(): i for i, u in enumerate(units)}
     out = set()
     for w in wanted or []:
         w = str(w).strip()
-        m = re.match(r"(slides?|pp?\.)\s*(\w+)(?:\s*[–-]\s*(\w+))?$", w, re.I)
+        if w.lower() in by_loc:
+            out.add(by_loc[w.lower()])
+            continue
+        m = re.match(r"slides?\s*(\d+)(?:\s*[–-]\s*(\d+))?$", w, re.I)
         if m:
-            kind = "slide" if m[1].lower().startswith("slide") else "p."
-            a, b = f"{kind} {m[2]}".lower(), f"{kind} {m[3] or m[2]}".lower()
+            a, b = int(m[1]), int(m[2] or m[1])
+            out.update(i for i, u in enumerate(units) if u.get("slide") is not None and min(a, b) <= u["slide"] <= max(a, b))
+            continue
+        m = re.match(r"pp?\.\s*(\w+)(?:\s*[–-]\s*(\w+))?$", w, re.I)
+        if m:
+            a, b = f"p. {m[1]}".lower(), f"p. {m[2] or m[1]}".lower()
             if a in by_loc and b in by_loc:
                 i, j = sorted((by_loc[a], by_loc[b]))
                 out.update(range(i, j + 1))
             continue
-        if w.lower() in by_loc:
-            out.add(by_loc[w.lower()])
-        elif w.startswith("§"):
+        if w.startswith("§"):
             want = w[1:].strip().lower()
             out.update(i for i, u in enumerate(units) if u["loc"].startswith("§") and want and want in u["loc"].lower())
     return sorted(out)
