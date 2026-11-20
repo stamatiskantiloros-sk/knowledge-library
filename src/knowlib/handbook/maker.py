@@ -88,7 +88,7 @@ Accuracy
 
 People
 16. Call the speaker "the lecturer", without he or she.
-17. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point.
+17. Keep the class's ideas, never as the lecturer's. Student presentations and the class discussion are material: keep their question, findings, arguments and answers, attributed to "the team" or "a student", and keep the lecturer's response as the lecturer's point. Never credit a student's point to the lecturer. Leave out chatter, small talk and rounds of guesses that carry no idea. Muting the class means rule 18: no one in the room is identified.
 18. Name no one in the room. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone there, even where the transcript or a slide shows one ([a person] marks a name taken out). Companies, organisations and public figures the lecture names are named.
 
 Style

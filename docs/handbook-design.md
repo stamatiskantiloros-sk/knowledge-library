@@ -172,7 +172,7 @@ Accuracy
 
 People
 16. Call the speaker "the lecturer", without he or she.
-17. Teach what the lecturer taught; mute the class. Leave out students' questions, answers, suggestions and comments, and class rounds of guesses. Keep a point only where the lecturer states or develops it, and then as the lecturer's point.
+17. Keep the class's ideas, never as the lecturer's. Student presentations and the class discussion are material: keep their question, findings, arguments and answers, attributed to "the team" or "a student", and keep the lecturer's response as the lecturer's point. Never credit a student's point to the lecturer. Leave out chatter, small talk and rounds of guesses that carry no idea. Muting the class means rule 18: no one in the room is identified.
 18. Name no one in the room. Students, staff and guests are "a student", "a colleague"; never write a name, email, employer or other personal detail of anyone there, even where the transcript or a slide shows one ([a person] marks a name taken out). Companies, organisations and public figures the lecture names are named.
 
 Style
@@ -332,6 +332,7 @@ A 95-minute lecture recorded as audio only, with a 65-slide deck, went through e
 - Names, emails and personal details are taken out of everything sent to a remote model and out of the book; the finish step checks the text and, by OCR, every image.
 - Condensing is its own pass, and is reviewed again: it reintroduced two overstatements the first review had fixed.
 - The flags worth acting on were nearly all overstatements: a hedge dropped, an example turned into a rule, a reason called a definition, a lecturer's addition credited to the slide. Rules 6, 9, 12, 17, 19 and 20 of the brief come from these and from the reader's notes: be condensed, let the layout show the source (never "on the slide"), plain words instead of shorthand labels, no stronger than the source, leave out what the recording lost rather than noting the gap, mute the class: students' answers in a round of guesses are not the lecturer's teaching (one draft had credited a student's suggestion to the lecturer as a "top priority"; the transcript showed the lecturer's own picks later).
+- Rule 17 first left students out altogether, and a Lecture 2 draft dropped a team's whole presentation on Nvidia's dependence on its CEO. The reader wanted it: a presentation and the class discussion are course material. The rule now keeps their content, attributed to the team or a student, and muting the class means only that no one is identified (rule 18).
 
 **Length and layout**
 - About 2,700 words for 95 minutes of lecture read well: roughly 30 words per minute, a third of the transcript.
