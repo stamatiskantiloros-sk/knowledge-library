@@ -206,7 +206,14 @@ DEFAULTS: dict[str, Any] = {
             "api_key_env": "NVIDIA_API_KEY",
             "api_key_file": "~/.nvidia_key",
             "timeout_s": 320,
+            # Tested as reviewers in November 2026 on a lecture note with planted errors (knowlib's review
+            # prompt, about 19k tokens). minimaxai/minimax-m3.1-flash answered in 30-60 s and caught blunt
+            # errors (a changed number) but missed a dropped "only", a dropped "may be, probably" and a
+            # team's opinion stated as fact, as ERNIE did: leads, not verdicts. Kimi K3.1 Pro, Mistral Large
+            # 4, GLM 5.3 and Step-5 answered a one-line prompt (3-104 s; GLM not at all) but never a full
+            # review within the gateway's cut-off, so none of them is listed for review.
             "models": {
+                "minimaxai/minimax-m3.1-flash": {"rpm": 40, "context": 128000},
                 "nvidia/nemotron-3.5-super-vl-120b-a12b": {"rpm": 40, "context": 128000},
                 "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": {"rpm": 40, "context": 128000},
             },
