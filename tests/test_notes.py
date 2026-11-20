@@ -383,11 +383,15 @@ def test_write_notes_writes_a_note_from_a_lecture(library, monkeypatch):
     assert done == ["working-capital"]
     assert "Material:\n[@lecture-2, slide 1, 00:00–02:00]" in prompts[0]      # small: every slide, no picking
     assert "never \"not X\"" in prompts[0] and "a student presentation" in prompts[0]
+    assert 'Call the speaker "the lecturer"' in prompts[0]
     assert "receivables" in (library / "notes" / "working-capital.md").read_text()
-    # too big to send whole: the model picks from the list of slides, and only those are sent
+    # too big to send whole: the model picks from the list of slides, and only those are sent;
+    # the speaker is called what the library's handbook calls them
     prompts.clear()
     done = writenotes.run(library, plan, themes_wanted=[], notes_wanted=[], force=True,
-                          writer={"backend": "fake", "max_prompt_chars": 400})
+                          writer={"backend": "fake", "max_prompt_chars": 400},
+                          overrides={"handbook": {"speaker": "the professor"}})
     assert done == ["working-capital"] and prompts[0].startswith("You are planning")
     assert "- slide 1, 00:00–02:00: Escondido" in prompts[0]
     assert "[@lecture-2, slide 2, 02:00–04:00]" in prompts[1] and "slide 1, 00:00" not in prompts[1]
+    assert 'Call the speaker "the professor"' in prompts[1] and "lecturer" not in prompts[1].split("Material:")[0]

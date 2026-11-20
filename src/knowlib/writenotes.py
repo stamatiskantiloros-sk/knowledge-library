@@ -137,8 +137,9 @@ Rules:
   "in general X, but not when Y" stays that, never "not X"; a remark about one setting (personal life, one
   company, one example) is not stretched to another; a number stays with what it was said about. State
   things exactly as strongly as the speaker did.
-- Students' questions, answers and presentations are not the lecturer's teaching. Attribute a point to the
-  lecturer only where the lecturer says it; what a student team presented is "a student presentation".
+- Students' questions, answers and presentations are not the lecturer's teaching. Attribute a point to
+  the lecturer only where the lecturer says it; what a student team presented is "a student presentation".
+  Call the speaker "the lecturer", without he or she.
   Never name anyone in the room; "[a person]" marks a name taken out.
 - A slide from a screen recording was read from the screen and may include browser or program text; use
   only the material shown (the document, the table, the case).
@@ -393,6 +394,7 @@ def run(root: Path, plan: Path, *, themes_wanted: list[str], notes_wanted: list[
     starts = chapter_starts(themes, digests)
     all_slugs = sorted({s for t in themes for s, _ in t["notes"]} | {p.stem for p in ctx.layout.notes.glob("[!_]*.md")})
     spine = keys[next(iter(keys))] if keys else "the first book"
+    speaker = str((cfg.get("handbook") or {}).get("speaker") or "the lecturer")   # as the handbook calls them
     cache = Cache(ctx.work_dir / "write_notes_cache.json")
     log = ctx.layout.notes / "_synthesis-log.md"
 
@@ -465,7 +467,7 @@ def run(root: Path, plan: Path, *, themes_wanted: list[str], notes_wanted: list[
         if whole:
             pages = "\n\n".join(filter(None, [pages, source_material(slug, desc, whole, max_chars - len(pages))]))
         # 2. write
-        prompt = WRITE_SOURCES_PROMPT if whole else WRITE_PROMPT
+        prompt = WRITE_SOURCES_PROMPT.replace("the lecturer", speaker) if whole else WRITE_PROMPT
         reply, cut = cache.ask_checked(provider, prompt.format(
             slug=slug, desc=desc, slugs=", ".join(all_slugs), spine=spine,
             today=dt.date.today().isoformat(), pages=pages), int(section["max_tokens"]), retries=1)
