@@ -48,15 +48,15 @@ The note:
 Reply with the whole revised note only, in Markdown, starting with its frontmatter."""
 
 
-def flagged(note, sources: dict, held: set, remote: bool, max_chars: int, cache: Cache, reviewer) -> tuple[list[dict], str]:
+def flagged(note, sources: dict, held: set, remote: bool, max_chars: int, cache: Cache, reviewer) -> tuple[list[dict] | None, str]:
     """The reviewer's partly/unsupported/unclear verdicts for this note's current text (from its cache),
-    and the passage block it read. Empty when the note has not been reviewed in this form."""
+    and the passage block it read. None when the note has not been reviewed in this form."""
     prompt, texts, _ = build(note, sources, held, remote, max_chars)
     if prompt is None:
         return [], ""
     reply = cache.lookup(reviewer, prompt)
     if not reply:
-        return [], ""
+        return None, ""
     try:
         verdicts = parse_json(reply).get("claims", [])
     except (ValueError, AttributeError):
@@ -109,12 +109,14 @@ def run(root: Path, *, note_slugs: list[str] | None = None, writer: dict | None 
     review_cache = Cache(ctx.work_dir / "notes_review_cache.json")
     cache = Cache(ctx.work_dir / "revise_notes_cache.json")
     log = ctx.layout.notes / "_synthesis-log.md"
-    revised = []
+    revised, unreviewed = [], []
     try:
         for note in load_notes(ctx.layout.notes):
             if note_slugs and note.slug not in note_slugs:
                 continue
             flags, passages = flagged(note, sources, held, remote, int(nr["max_passage_chars"]), review_cache, reviewer)
+            if flags is None:
+                unreviewed.append(note.slug)
             if not flags:
                 continue
             path = ctx.layout.notes / f"{note.slug}.md"
@@ -156,4 +158,8 @@ def run(root: Path, *, note_slugs: list[str] | None = None, writer: dict | None 
             print(f"revise-notes: {note.slug}: revised ({len(flags)} flags)", file=sys.stderr)
     finally:
         writer_p.close()
+    if unreviewed:
+        print(f"revise-notes: {len(unreviewed)} notes have no review of their current text, so nothing to revise "
+              f"there; run review-notes first: {', '.join(unreviewed[:8])}{' …' if len(unreviewed) > 8 else ''}",
+              file=sys.stderr)
     return revised
