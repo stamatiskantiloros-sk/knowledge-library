@@ -776,3 +776,13 @@ def test_dates_are_not_phone_numbers_but_phone_numbers_are():
     assert privacy.reasons("Lecture of 2026-11-13, slides 2-1", []) == []
     assert privacy.reasons("call +30 210 123 4567", []) == ["a phone number"]
     assert privacy.redact("on 2026-11-13 call 210 123 4567", []) == "on 2026-11-13 call [a phone number]"
+
+
+def test_session_file_names_match_macos_narrow_space(tmp_path):
+    """A session.yaml name typed with a plain space finds the macOS screen recording named with U+202F."""
+    from knowlib.media.session import find_file
+    real = tmp_path / "Screen Recording 2026-11-24 at 6.06.38 PM.mov"
+    real.write_bytes(b"x")
+    assert find_file(tmp_path, "Screen Recording 2026-11-24 at 6.06.38 PM.mov") == real
+    assert find_file(tmp_path, real.name) == real
+    assert find_file(tmp_path, "Screen Recording 2026-11-24 at 6.06.39 PM.mov") is None

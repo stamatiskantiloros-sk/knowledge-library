@@ -20,6 +20,7 @@ session.yaml (all keys optional):
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -80,13 +81,13 @@ def assemble(paths: list[Path], folder: Path, sidecar: dict, work: Path) -> Sess
     info = {p.name: probe(p) for p in media}
     videos = [p for p in media if info[p.name]["has_video"]]
     if sidecar.get("video"):
-        video = folder / sidecar["video"]
+        video = find_file(folder, sidecar["video"]) or folder / sidecar["video"]
     else:
         video = max(videos, key=lambda p: info[p.name].get("width", 0) * info[p.name]["duration"]) if videos else None
     audio_sources = [p for p in media if info[p.name]["has_audio"]]
 
     if sidecar.get("primary_audio"):
-        primary, reason = folder / sidecar["primary_audio"], "marked in session.yaml"
+        primary, reason = find_file(folder, sidecar["primary_audio"]) or folder / sidecar["primary_audio"], "marked in session.yaml"
     elif len(audio_sources) == 1:
         primary, reason = audio_sources[0], "only audio source"
     elif audio_sources:
@@ -133,6 +134,23 @@ def video_offset(audio: Path, video: Path, work: Path, max_lag_s: float = 240.0,
     return best / rate, round(best_r, 3)
 
 
+def _name_key(name: str) -> str:
+    import unicodedata
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFC", name)).strip().casefold()
+
+
+def find_file(folder: Path, name: str) -> Path | None:
+    """A file named in session.yaml: the exact name, else the one whose name differs only in spaces,
+    Unicode form or case. macOS names screen recordings "... at 6.06.38 PM.mov" with a narrow
+    no-break space that a name typed by hand never has."""
+    f = folder / name
+    if f.exists():
+        return f
+    key = _name_key(name)
+    hits = [p for p in folder.iterdir() if _name_key(p.name) == key]
+    return hits[0] if len(hits) == 1 else None
+
+
 def join_parts(sess: Session, parts: list, work: Path) -> list[dict]:
     """A lecture recorded in parts (session.yaml `parts:`): join their audio, in order, into one
     recording that becomes the session's primary audio. Each part is a file name or
@@ -145,11 +163,11 @@ def join_parts(sess: Session, parts: list, work: Path) -> list[dict]:
     items = []
     for i, p in enumerate(parts):
         d = {"audio": p} if isinstance(p, str) else dict(p)
-        f = sess.folder / d["audio"]
-        if not f.exists():
+        f = find_file(sess.folder, d["audio"])
+        if f is None:
             raise FileNotFoundError(f"session.yaml part {d['audio']} not found in {sess.folder}")
-        v = sess.folder / d["video"] if d.get("video") else None
-        if v is not None and not v.exists():
+        v = find_file(sess.folder, d["video"]) if d.get("video") else None
+        if d.get("video") and v is None:
             raise FileNotFoundError(f"session.yaml part video {d['video']} not found in {sess.folder}")
         items.append((str(d.get("name") or f"Part {chr(65 + i)}"), f, v))
     fp = hashlib.sha256(json.dumps([(n, f.name, f.stat().st_size) for n, f, _ in items]).encode()).hexdigest()[:10]
