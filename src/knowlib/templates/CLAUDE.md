@@ -81,6 +81,7 @@ For each id from `knowlib pending`:
    - **unsupported** (error): the passages do not say it. Correct the claim from the source or remove it.
    - **partly** (warning): overstated, too general or too exact. Narrow it to what the passages say.
    - **unclear**: a cited passage is missing or cut off. Fix the locator so it points to the right place.
+   With many flags, `knowlib revise-notes -L .` hands each note's flags, the reviewer's reasons and the same passages to the writer (never the reviewer), and keeps a revision only if it parses, keeps the other claims and adds no check-notes errors. Read what it changed before relying on it.
    Run `check-notes` and `review-notes` again after the fixes; a changed note is reviewed again.
 10. Run `knowlib mark-synthesized <id> ...` for the sources you finished, once both show no errors.
 

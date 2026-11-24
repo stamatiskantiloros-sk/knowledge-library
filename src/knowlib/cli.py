@@ -279,6 +279,19 @@ def cmd_review_notes(args) -> int:
     return 1 if any(f.level == "error" for f in findings) else 0
 
 
+def cmd_revise_notes(args) -> int:
+    from . import noterevise
+    from .config import deep_merge
+    from .models import parse_spec
+    root = _lib(args)
+    overrides = deep_merge(parse_sets(args.set), {"local_only": True} if args.local_only else {})
+    writer = parse_spec(args.writer) if args.writer else None
+    revised = noterevise.run(root, note_slugs=args.notes or None, writer=writer, overrides=overrides)
+    print(f"{len(revised)} notes revised: {', '.join(revised) or '-'}")
+    print("next: knowlib check-notes, then knowlib review-notes (the reviewer judges the revised claims)")
+    return 0
+
+
 def cmd_reprocess(args) -> int:
     from .runner import process
     root = _lib(args)
@@ -588,6 +601,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--set", action="append", default=[], help="config override, e.g. notes_review.openai_model=google/gemma-4-12b")
     s.add_argument("--no-model-check", action="store_true", help="skip the check that the models answer")
     s.set_defaults(fn=cmd_review_notes)
+    s = lib(sub.add_parser("revise-notes", help="the writer corrects the claims review-notes flagged; review again after"))
+    s.add_argument("--notes", nargs="*", default=[], help="only these note slugs")
+    s.add_argument("--writer", help="this run's writer, as for write-notes (default: notes_writer)")
+    s.add_argument("--local-only", action="store_true", help="refuse to send anything off this machine")
+    s.add_argument("--set", action="append", default=[], help="config override")
+    s.set_defaults(fn=cmd_revise_notes)
     s = lib(sub.add_parser("write-notes", help="a model writes topic notes from the books, following a plan"))
     s.add_argument("--plan", default="notes/_synthesis-plan.md", help="the synthesis plan (themes, chapters, note slugs)")
     s.add_argument("--theme", nargs="*", default=[], help="only these themes (letters)")

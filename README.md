@@ -101,6 +101,7 @@ knowlib names -L DIR                # names said in class, to keep off every mod
 knowlib pending -L DIR              # sources not yet synthesized into notes
 knowlib check-notes -L DIR          # citations, numbers, quotations, duplicates, consolidation
 knowlib review-notes -L DIR         # a second model judges every claim against its cited passages
+knowlib revise-notes -L DIR         # the writer corrects the claims the review flagged; review again after
 knowlib check-figures -L DIR        # a second vision model rereads flagged figures and tables
 knowlib digest -L DIR               # a finding aid per book, never cited itself
 knowlib handbook -L DIR --prepare --output OUT --only "<lecture>"   # the brief for one lecture's handbook

@@ -395,3 +395,73 @@ def test_write_notes_writes_a_note_from_a_lecture(library, monkeypatch):
     assert "- slide 1, 00:00–02:00: Escondido" in prompts[0]
     assert "[@lecture-2, slide 2, 02:00–04:00]" in prompts[1] and "slide 1, 00:00" not in prompts[1]
     assert 'Call the speaker "the professor"' in prompts[1] and "lecturer" not in prompts[1].split("Material:")[0]
+
+
+class FakeWriter:
+    """Stands in for the writer: records the prompt and returns a fixed revision."""
+    backend, model, is_local, last_finish = "fake", "fake-writer", True, "stop"
+
+    def __init__(self, reply):
+        self.reply, self.prompts = reply, []
+
+    def generate(self, images, prompt, **kw):
+        self.prompts.append(prompt)
+        return self.reply
+
+    def close(self):
+        pass
+
+
+def test_revise_sends_the_flags_to_the_writer_and_keeps_only_a_sound_revision(library, monkeypatch):
+    from knowlib import noterevise, notereview
+    from knowlib.providers.agent import AgentJobsWaiting
+    from knowlib.providers import get_vision_provider as real
+    body = ("## Key points\n- Disney's WACC was 8.5% [@book, p. 53].\n"
+            "- WACC is always the right discount rate for every project [@book, p. 53].\n"
+            "- Beta measures market risk and nothing else [@book, p. 52].\n")
+    write(library, "wacc", note("wacc", "WACC", body, ["book"]))
+    session = {"notes_review": {"backend": "agent", "agent_model": "sonnet"}}
+    with pytest.raises(AgentJobsWaiting):
+        notereview.run(library, overrides=session)
+    job = json.loads((library / ".work" / "agent" / "jobs.json").read_text())[0]
+    Path(job["answer"]).write_text(json.dumps({"claims": [
+        {"n": 1, "verdict": "supported", "reason": "ok"},
+        {"n": 2, "verdict": "unsupported", "reason": "nothing about every project"},
+        {"n": 3, "verdict": "partly", "reason": "'measures market risk', not 'nothing else'"}]}))
+    notereview.run(library, overrides=session)
+    before = (library / "notes" / "wacc.md").read_text()
+    good = before.replace("- WACC is always the right discount rate for every project [@book, p. 53].\n", "") \
+                 .replace("market risk and nothing else", "market risk")
+    fake = FakeWriter(good)
+    monkeypatch.setattr(noterevise, "get_vision_provider",
+                        lambda sec, cfg: fake if sec.get("backend") == "fake" else real(sec, cfg))
+    assert noterevise.run(library, writer={"backend": "fake"}, overrides=session) == ["wacc"]
+    sent = fake.prompts[0]
+    assert "2. unsupported: WACC is always" in sent and "nothing about every project" in sent
+    assert "[P1] book, p. 53" in sent and "1. supported" not in sent        # only the flagged claims
+    after = (library / "notes" / "wacc.md").read_text()
+    assert "every project" not in after and "nothing else" not in after and "8.5%" in after
+    assert "revised by fake-writer" in (library / "notes" / "_synthesis-log.md").read_text()
+    # the revised note is a new prompt for the reviewer: no cached verdicts, so nothing more to revise
+    assert noterevise.run(library, writer={"backend": "fake"}, overrides=session) == []
+
+
+def test_revise_refuses_a_revision_that_breaks_the_note(library, monkeypatch):
+    from knowlib import noterevise, notereview
+    from knowlib.providers.agent import AgentJobsWaiting
+    from knowlib.providers import get_vision_provider as real
+    write(library, "wacc", note("wacc", "WACC", "## Key points\n- Beta measures market risk and more [@book, p. 52].\n", ["book"]))
+    session = {"notes_review": {"backend": "agent", "agent_model": "sonnet"}}
+    with pytest.raises(AgentJobsWaiting):
+        notereview.run(library, overrides=session)
+    job = json.loads((library / ".work" / "agent" / "jobs.json").read_text())[0]
+    Path(job["answer"]).write_text(json.dumps({"claims": [{"n": 1, "verdict": "partly", "reason": "no 'more'"}]}))
+    notereview.run(library, overrides=session)
+    before = (library / "notes" / "wacc.md").read_text()
+    for bad in ("# WACC\n\nno frontmatter [@book, p. 52].\n",                                  # header lost
+                before.replace("[@book, p. 52]", "[@book, p. 99]")):                           # a page that does not exist
+        monkeypatch.setattr(noterevise, "get_vision_provider",
+                            lambda sec, cfg, r=bad: FakeWriter(r) if sec.get("backend") == "fake" else real(sec, cfg))
+        (library / ".work" / "revise_notes_cache.json").unlink(missing_ok=True)
+        assert noterevise.run(library, writer={"backend": "fake"}, overrides=session) == []
+        assert (library / "notes" / "wacc.md").read_text() == before
