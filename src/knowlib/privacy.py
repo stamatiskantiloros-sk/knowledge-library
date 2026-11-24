@@ -64,11 +64,11 @@ def redact(text: str, ns: list[str], label: str = "[a person]") -> str:
 
 # ---- names spoken in class ---------------------------------------------------------------------
 
-_SPOKEN = re.compile(r"^\[\d+:\d\d(?::\d\d)?\]\s*(.*)$", re.M)
+_SPOKEN = re.compile(r"^(?:>\s*)?\[\d+:\d\d(?::\d\d)?\]\s*(.*)$", re.M)   # a "> [t] Speech check" line too
 # a capitalised word (or two) in mid-sentence: after a lower-case letter or a comma, or after "name is"
 _CANDIDATE = re.compile(r"(?:(?<=[a-z,;] )|(?<=name is ))([A-Z][a-z]{2,}(?: [A-Z][a-z]{2,})?)\b")
 _NOT_NAMES = set("""I'm I'll I've I'd Okay Yes Yeah No The What This That These Those There Then Do Does You And But So Why
-How When Where Who Which Can Because If Now Let We He She It They My Our Your His Her Mr Mrs Ms Dr Sir Professor
+How When Where Who Which Can Because If Now Let We He She It They My Our Your His Her Mr Mrs Ms Dr Sir Professor Whisper Parakeet Speech
 Monday Tuesday Wednesday Thursday Friday Saturday Sunday Mondays Tuesdays Wednesdays Thursdays Fridays January
 February March April May June July August September October November December""".split())
 
@@ -119,7 +119,7 @@ def spoken_only(cfg: dict) -> list[str]:
     return [str(n) for n in ((cfg.get("privacy") or {}).get("spoken_only") or []) if str(n).strip()]
 
 
-_TIMESTAMPED = re.compile(r"^\s*\[\d+:\d\d(?::\d\d)?\].*$", re.M)
+_TIMESTAMPED = re.compile(r"^\s*(?:>\s*)?\[\d+:\d\d(?::\d\d)?\].*$", re.M)
 _TRANSCRIPT_BLOCK = re.compile(r'(Transcript[^\n]*:\s*\n?""")(.*?)(""")', re.S)
 
 

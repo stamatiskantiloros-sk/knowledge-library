@@ -141,6 +141,9 @@ Rules:
   the lecturer only where the lecturer says it; what a student team presented is "a student presentation".
   Call the speaker "the lecturer", without he or she.
   Never name anyone in the room; "[a person]" marks a name taken out.
+- A "> [MM:SS] **Speech check:**" line marks a passage two speech models heard differently. Do not state
+  the disputed name, number or negation unless a slide or document in the material confirms it; never cite
+  the speech check line itself.
 - A slide from a screen recording was read from the screen and may include browser or program text; use
   only the material shown (the document, the table, the case).
 - Where sources differ (the lecturer and a document, two documents), write both under

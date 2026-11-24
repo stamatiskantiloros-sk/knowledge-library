@@ -22,7 +22,7 @@ from ..media.frames import extract_frames, group_frames, resized_copy, save_cand
 from ..media.ocr import crosscheck, recheck_without_recurring
 from ..media.select import caption_kept, fill_text_from_ocr, fmt_ts, kept_to_json, match_frame_to_text, select
 from ..media.session import assemble, join_parts
-from ..media.transcribe import map_segments, transcribe
+from ..media.transcribe import map_segments, transcribe, whisper_language
 from ..providers import get_vision_provider, release_all
 from ..providers.agent import stop_if_waiting
 from .base import Context, Ingestor, IngestResult, InputItem, register
@@ -30,21 +30,27 @@ from .base import Context, Ingestor, IngestResult, InputItem, register
 log = logging.getLogger("knowlib")
 
 
-def _paragraphs(segs: list[dict], start: float, end: float, para_s: float = 60) -> list[str]:
-    """Transcript between start and end as paragraphs of ~para_s seconds, each with a timestamp."""
-    out, cur, cur_t = [], [], None
-    for s in segs:
+def _paragraphs(segs: list[dict], start: float, end: float, para_s: float = 60,
+                checks: dict | None = None) -> list[str]:
+    """Transcript between start and end as paragraphs of ~para_s seconds, each with a timestamp, and
+    after a paragraph a "Speech check" line for each passage the second speech model heard differently."""
+    from ..media.speechcheck import check_line
+    out, cur, cur_t, notes = [], [], None, []
+    for i, s in enumerate(segs):
         mid = (s["start"] + s["end"]) / 2
         if not (start <= mid < end):
             continue
         if cur_t is None:
             cur_t = s["start"]
         cur.append(s["text"])
+        notes += [check_line(fmt_ts(s["start"]), c) for c in (checks or {}).get(i, [])]
         if s["end"] - cur_t >= para_s:
             out.append(f"[{fmt_ts(cur_t)}] " + " ".join(cur))
-            cur, cur_t = [], None
+            out += notes
+            cur, cur_t, notes = [], None, []
     if cur:
         out.append(f"[{fmt_ts(cur_t)}] " + " ".join(cur))
+        out += notes
     return out
 
 
@@ -105,6 +111,7 @@ class MediaSessionIngestor(Ingestor):
 
     def ingest(self, item: InputItem, ctx: Context) -> IngestResult:
         cfg = session_config(ctx.config, item.sidecar)
+        self._checks = {}
         content_hash = item.content_hash or hash_many(item.paths)
         tmp_work = ctx.work_for(f"_session_{content_hash[:12]}")
         sess = assemble(item.paths, item.folder or item.path.parent, item.sidecar, tmp_work)
@@ -116,7 +123,7 @@ class MediaSessionIngestor(Ingestor):
             tmp_work.rename(work)
         work.mkdir(parents=True, exist_ok=True)
         if ctx.force:
-            for f in ("alignment.json", "transcript.json", "candidates.json", "selection_cache.json"):
+            for f in ("alignment.json", "transcript.json", "speech_check.json", "candidates.json", "selection_cache.json"):
                 (work / f).unlink(missing_ok=True)
 
         parts = join_parts(sess, item.sidecar["parts"], work) if item.sidecar.get("parts") else []
@@ -175,6 +182,8 @@ class MediaSessionIngestor(Ingestor):
             segs = map_segments(tr["segments"], mapping.map)
             pipeline["transcription"] = tr["provenance"]
             flags += tr["flags"]
+            if sess.primary_audio and tr["provenance"].get("tool") != "subtitles":
+                self._checks = self._speech_check(sess, work, tr["segments"], cfg, language, pipeline, flags)
             stats["transcript_segments"] = len(segs)
         else:
             flags.append("no audio: transcript missing")
@@ -321,6 +330,38 @@ class MediaSessionIngestor(Ingestor):
 
     _deck = None
     _starts = None
+    _checks: dict = {}
+
+    @staticmethod
+    def _speech_check(sess, work: Path, raw_segs: list[dict], cfg, language, pipeline: dict, flags: list) -> dict:
+        """A second speech model on the same audio; {segment index: [disagreements]} (media/speechcheck.py)."""
+        tc = cfg["transcription"]
+        cc = tc.get("cross_check") or {}
+        if str(cc.get("backend") or "none").lower() in ("none", "off", "false") or \
+                (tc["backend"] == "mock" and cc["backend"] != "mock"):          # tests: no second model
+            return {}
+        from ..media.av import extract_wav
+        from ..media.speechcheck import compare, second_transcript
+        lang = whisper_language(language, tc)
+        fp = {"audio": sess.primary_audio.name, "backend": cc["backend"], "language": lang,
+              "model": cc["model"] if lang == "en" else cc.get("model_other_languages") or cc["model"]}
+
+        def run():
+            words, prov = second_transcript(extract_wav(sess.primary_audio, work / "transcribe.wav"), lang, cc)
+            return {"words": words, "provenance": prov}
+        try:
+            progress.stage("speech check")
+            _reuse_earlier(work / "speech_check.json", fp)
+            sc = _cached(work / "speech_check.json", fp, run)
+        except ImportError as e:
+            flags.append(f"speech check unavailable: {e} (transcription.cross_check)")
+            return {}
+        checks = compare(raw_segs, sc["words"], sess.glossary)
+        pipeline["speech_check"] = sc["provenance"]
+        if n := sum(len(v) for v in checks.values()):
+            flags.append(f"speech check: {n} passages where Whisper and {cc['backend'].capitalize()} heard a different "
+                         "name, number or negation (marked 'Speech check' under Spoken)")
+        return checks
 
     def _render_aligned(self, sess, segs, w: SourceWriter, flags, stats, pipeline: dict | None = None) -> str:
         """An audio-only lecture with its slide deck: each slide with what was said while it was up,
@@ -352,7 +393,7 @@ class MediaSessionIngestor(Ingestor):
                  + "*"]
         shown = [p for p in places if p.start is not None]
         if shown and shown[0].start > 0:
-            pre = _paragraphs(segs, float("-inf"), shown[0].start)
+            pre = _paragraphs(segs, float("-inf"), shown[0].start, checks=self._checks)
             if pre:
                 lines += ["", f"## Before the first slide (to {fmt_ts(shown[0].start)})", "", *[p + "\n" for p in pre]]
         last_end = shown[0].start if shown else 0.0
@@ -381,7 +422,7 @@ class MediaSessionIngestor(Ingestor):
             if reading:
                 lines += ["", f"**Figure:** {reading}"]
             if p.start is not None:
-                spoken = _paragraphs(segs, start, end)
+                spoken = _paragraphs(segs, start, end, checks=self._checks)
                 if spoken:
                     lines += ["", "**Spoken:**", "", *[s + "\n" for s in spoken]]
                 last_end = end
@@ -420,7 +461,7 @@ class MediaSessionIngestor(Ingestor):
             chunk = 300.0
             t = 0.0
             while t < end:
-                paras = _paragraphs(segs, t, t + chunk)
+                paras = _paragraphs(segs, t, t + chunk, checks=self._checks)
                 if paras:
                     lines += [f"### {fmt_ts(t)}–{fmt_ts(min(t + chunk, end))}", "", *[p + "\n" for p in paras]]
                 t += chunk
@@ -428,7 +469,7 @@ class MediaSessionIngestor(Ingestor):
 
         starts = [k.start for k in kept] + [float("inf")]
         if starts[0] > 0:
-            pre = _paragraphs(segs, float("-inf"), starts[0])
+            pre = _paragraphs(segs, float("-inf"), starts[0], checks=self._checks)
             if pre:
                 lines += ["", f"## Before the first slide (to {fmt_ts(starts[0])})", "", *[p + "\n" for p in pre]]
         ext = Path(kept[0].frame).suffix
@@ -469,7 +510,7 @@ class MediaSessionIngestor(Ingestor):
                         lines += ["", f"**OCR text ({b}):**", "", r["text"].strip()]
             if k.caption:
                 lines += ["", f"**Figure:** {k.caption}" + (f" *({k.content_type})*" if k.content_type not in ("slide", "other") else "")]
-            spoken = _paragraphs(segs, k.start, end)
+            spoken = _paragraphs(segs, k.start, end, checks=self._checks)
             if spoken:
                 lines += ["", "**Spoken:**", "", *[p + "\n" for p in spoken]]
         return "\n".join(lines)

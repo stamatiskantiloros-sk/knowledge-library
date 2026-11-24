@@ -36,6 +36,15 @@ DEFAULTS: dict[str, Any] = {
         "hallucination_silence_s": 2.0,      # mlx-whisper: skip silences this long, where loops start
         "start_s": None,                     # per session: transcribe from here (skip the room before class)
         "prefer_subtitles": False,           # use a provided .srt/.vtt instead of transcribing
+        # A second speech model from another family on the same audio (media/speechcheck.py): where it
+        # and Whisper hear a different name, number or negation, the lecture file marks the passage.
+        "cross_check": {
+            "backend": "parakeet",           # parakeet (mlx-audio, this Mac) | none
+            "model": "mlx-community/parakeet-tdt-0.6b-v2",                    # English
+            "model_other_languages": "mlx-community/parakeet-tdt-0.6b-v3",    # 25 European languages
+            "chunk_s": 120,
+            "overlap_s": 15,
+        },
     },
     "alignment": {
         "envelope_hz": 100,                  # feature rate for loudness/onset envelopes

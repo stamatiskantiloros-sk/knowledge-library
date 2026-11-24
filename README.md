@@ -7,7 +7,7 @@ What it is built around is not extraction but **adversarial review**. Every outp
 - a note's numbers are checked by code against the cited page;
 - a note's claims are judged by a second model from another family, which is never the writer;
 - a handbook's sentences are reread against the transcript passage they come from;
-- a redrawn figure is compared with its slide, then approved by you.
+- a redrawn figure is compared with its slide by a vision model, then judged by the agent, with a sheet for you to look over.
 
 Disagreements are never resolved by the producer. They become visible flags, and the strongest reader available settles each one against the original. See [docs/adversarial-review.md](docs/adversarial-review.md).
 

@@ -44,6 +44,7 @@ For each claim decide, using only the passages it cites:
 - supported: the passages say this.
 - partly: some of it is in the passages, or it is stated more strongly, more generally or more precisely than they allow.
 - unsupported: the passages do not say this, or say something different.
+- A "Speech check" line in a passage means two speech models heard that passage differently. A claim whose name, number or negation rests only on one of the two versions, with no slide or document confirming it, is at most partly.
 - unclear: a cited passage is missing, cut off or unreadable, so you cannot tell.
 Judge only against the passages, never your own knowledge of the subject, even when the claim is true. A claim may restate or calculate from the passages: that is supported if the calculation is right.
 

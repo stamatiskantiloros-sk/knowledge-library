@@ -99,6 +99,7 @@ Style
 Check before finishing
 21. Check the draft claim by claim against its sources: for each claim find the transcript passage (its time) or the slide it comes from and read it again. Fix or remove anything the passage does not say, or says less strongly, more narrowly or about something else. Check every number with what it was said about, and every place the lecturer and a document disagree (rule 11).
 22. The finish step lists, under "To check" in review.md, sentences with absolute words (always, never, every, only, not...) whose source passage hedges. Reread each passage and fix the sentence, or leave it if the lecturer said it that strongly, then finish again.
+23. A "Speech check" line under what was said marks a passage that a second speech model heard differently, on a name, a number or a negation. Take neither version on trust: confirm the word from a slide or document. If nothing confirms it, leave the detail out or write the point without it, and say so in corrections.md.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>"""
 

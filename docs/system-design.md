@@ -239,7 +239,7 @@ All use `first_working()`, which tries backends in order and turns an import err
 This is the core of knowlib. A lecture has two streams, what was said and what was shown, and they are captured separately and then joined on one timeline. Every stage caches in `.work/<id>/`.
 
 ```
-assemble ─ align ─ transcribe ─ extract frames ─ group ─ decide ─ read ─ merge ─ OCR check ─ caption ─ render
+assemble ─ align ─ transcribe ─ speech check ─ extract frames ─ group ─ decide ─ read ─ merge ─ OCR check ─ caption ─ render
 ```
 
 ### 11.1 Session assembly
@@ -269,6 +269,8 @@ Backends: `mlx-whisper`, `faster-whisper`, `whisper-cpp`, `subtitles`, `mock`. T
 - With `prefer_subtitles`, the lecture's own `.srt` or `.vtt` is used instead. The parser strips markup and the trailing cue numbers some exporters add.
 
 Timestamps then pass through the alignment map. The cache fingerprint covers audio, backend, model, language, glossary and subtitles.
+
+**Speech cross-check** (`media/speechcheck.py`, `transcription.cross_check`). A second speech model from another family, NVIDIA Parakeet through mlx-audio (`parakeet-tdt-0.6b-v2` for English, `v3` for other European languages), transcribes the same audio; it is cached in `speech_check.json` by audio, backend, model and language. Whisper stays the transcript. Each Whisper segment is compared, word by word after normalising (lower case, no fillers or possessives, spelled numbers as digits, "isn't" as "is not"), with the Parakeet words whose midpoint falls in the same seconds. A difference is kept only where it touches a word that matters: a number, a negation, a scale word (million, billion, percent), a glossary term or a capitalised word mid-sentence, and not a spelling variant of a name (similarity 0.8 or more; numbers must match exactly). Differences a few words apart merge; words cut at a segment's edge are ignored; at most two per segment. Each becomes a line after its paragraph under **Spoken:**, `> [MM:SS] **Speech check:** Whisper heard "…"; Parakeet heard "…".`, and the source gets one flag with the count. The privacy guard treats these lines as speech. Tested on 31 minutes of a classroom lecture (2026-11-24): any two models disagreed on 20-30% of all words, mostly fillers, and the check kept about two passages a minute, among them every known error (a CEO's name, 50% against 30%, billion against million, a refiner's name). Parakeet took 42 seconds for the 31 minutes; Qwen3-ASR 1.7B was slower than Whisper turbo and missed names Parakeet got.
 
 ### 11.4 Frames and grouping
 
@@ -339,6 +341,7 @@ Captions are descriptions for search, and may state inferences. They are never t
 **Spoken:**
 
 [00:10] transcript paragraphs of about 60 seconds
+> [00:42] **Speech check:** Whisper heard "…"; Parakeet heard "…".   (where they differ)
 ```
 
 A slide's speech runs from its start to the next slide's start. Audio-only sessions become timestamped transcript sections of 5 minutes.

@@ -183,6 +183,7 @@ Style
 Check before finishing
 21. Check the draft claim by claim against its sources: for each claim find the transcript passage (its time) or the slide it comes from and read it again. Fix or remove anything the passage does not say, or says less strongly, more narrowly or about something else. Check every number with what it was said about, and every place the lecturer and a document disagree (rule 11).
 22. The finish step lists, under "To check" in review.md, sentences with absolute words (always, never, every, only, not...) whose source passage hedges. Reread each passage and fix the sentence, or leave it if the lecturer said it that strongly, then finish again.
+23. A "Speech check" line under what was said marks a passage that a second speech model heard differently, on a name, a number or a negation. Take neither version on trust: confirm the word from a slide or document. If nothing confirms it, leave the detail out or write the point without it, and say so in corrections.md.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>
 ```
@@ -355,7 +356,7 @@ A slide screenshot carries the slide's colours, fonts and decoration into the bo
 | Compare | `handbook.figures.checker` (a vision model) | The figure beside the slide: missing or wrong content, reversed arrows, unreadable text. |
 | Revise | `handbook.figures.reviser` | Up to `revisions` rounds with the label misses and the checker's issues. |
 | Judge | the agent | Looks at each figure beside its slide; fixes small things by hand (`knowlib figures render`); writes `verdict.json`. |
-| Show | `knowlib figures sheet` | `review.html`: slide, figure, idea and verdict side by side. Nothing enters the draft until the user approves. |
+| Show | `knowlib figures sheet` | `review.html`: slide, figure, idea and verdict side by side, for the user to look over. The agent's `accept` verdict places the figure; the user can overrule it afterwards. |
 | Place | `knowlib handbook --finish` | An approved figure replaces the slide at its printed size. Typst figures go in as SVG: vector, so text and lines stay sharp at any zoom (the PNG at 300 ppi looked soft on screen beside the text). Typst's SVG draws text as paths, so no fonts are needed. The PNG is copied beside it for the privacy check's OCR. Figures from the other tools go in as PNG. Because the SVG has no text, the words from the figure's PDF (`fig_NNN.text.json`) are laid over it as transparent text at the same places and sizes, so Ctrl+F finds and highlights them and they can be copied; the figure looks the same. The layer uses pt sizes, not container units: `container-type` changed how Chrome balanced the columns. |
 | Tidy | `knowlib handbook --finish` | Chrome adds an empty page when two columns end exactly at the foot of the last page; trailing pages with only a page number are removed. |
 
