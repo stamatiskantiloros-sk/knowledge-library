@@ -9,6 +9,7 @@ The comparison images are small internal copies; the frames themselves stay at n
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -76,7 +77,10 @@ def part_frames(parts: list[dict], work: Path, fps: float, fmt: str = "jpg") -> 
             if t < p.get("start_s", 0) - 1 or ("end_s" in p and t > p["end_s"] + 1):
                 continue
             dest = out / f"f_{n:06d}.{fmt}"
-            os.link(fr.path, dest)                     # one copy on disk; redaction edits both names
+            try:
+                os.link(fr.path, dest)                 # one copy on disk; redaction edits both names
+            except OSError:                            # SMB shares (a NAS) have no hard links: copy. Only
+                shutil.copy2(fr.path, dest)            # this copy is used and redacted; the part's stays local
             frames.append(Frame(dest, round(t, 2)))
             n += 1
     marker.write_text(json.dumps({"key": key, "frames": [[f.path.name, f.t] for f in frames]}))
