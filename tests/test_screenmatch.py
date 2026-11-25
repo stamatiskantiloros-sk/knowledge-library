@@ -143,3 +143,54 @@ def test_a_short_screen_of_the_same_run_stays_in_the_range():
           Slide(15, "29:18", "31:00", cite="deck 2-1, slide 12"),
           Slide(16, "31:00", "31:05", cite="deck 2-2, slide 1")]           # 5 s, another deck: left out
     assert cite_sources("*Slides 13–16*", ss, False) == "*Deck 2-1, slides 10–12*"
+
+
+# The lecturer presented a 6-page version of a deck; the posted one has 8: pages 3 and 4 were inserted.
+POSTED = ["Agenda capacity planning questions strategies time management outline today",
+          "Capacity definitions maximum output operating unit machine factory team worker",
+          "Solution truck companies efficiency utilization percentages verdict bad good",
+          "Solution graphs design effective actual output bars three companies",
+          "Capacity cushion extra capacity offset demand uncertainty percentage utilization",
+          "Services design capacity restaurant hospital call center software theoretical",
+          "Home exercise eduportal break even healthy snacks",
+          "Takt time pulse business interval demand available time customer"]
+
+
+def test_a_counter_of_another_version_is_read_through_its_neighbours_offset():
+    d = doc("deck 3", POSTED)
+    screens = [(POSTED[4], "3 / 6"),                 # text: page 5 at presented counter 3 -> offset 2
+               ("", "Chrome 4 / 6"),                  # nothing readable: 4 + 2 = page 6
+               (POSTED[7], "6 / 6")]                  # text: page 8 at counter 6 -> offset 2 here too
+    got = sm.match_screens(screens, [d])
+    assert (got[1].page, got[1].how, got[1].sure) == (6, "page counter, offset", True)
+
+
+def test_no_offset_across_inserted_pages_and_guesses_are_marked():
+    d = doc("deck 3", POSTED)
+    screens = [(POSTED[1], "2 / 6"),                  # offset 0
+               ("design capacity graphs truck efficiency utilization percentages", "3 / 6"),
+               (POSTED[4], "4 / 6")]                  # offset 1: a page was inserted in between
+    got = sm.match_screens(screens, [d])
+    assert got[1] is None or (got[1].how == "between neighbours" and not got[1].sure)
+
+
+def test_a_screen_scrolled_between_two_pages_does_not_trust_its_counter():
+    d = doc("deck 3", POSTED)
+    # offset 0 on both sides; the middle screen's counter says 6, but it shows page 5's words
+    screens = [(POSTED[3], "4 / 9"), ("capacity cushion extra offset demand uncertainty", "6 / 9"),
+               (POSTED[6], "7 / 9")]
+    got = sm.match_screens(screens, [d])
+    assert got[1].page == 5 and got[1].how == "text"
+
+
+def test_pages_checked_by_eye_win(tmp_path):
+    md = _lecture(tmp_path)
+    (tmp_path / "session.yaml").write_text("screen_pages: {1: 3, 2: null}\n", encoding="utf-8")
+    r = sm.relabel(md, tmp_path, ocr=lambda p: "5 / 5")
+    assert r == {"screens": 2, "checked": 1, "none": 1}
+    lec = parse_source(md)
+    assert (lec.slides[0].cite, lec.slides[0].how, lec.slides[0].guessed) == ("deck 2-1, slide 3", "checked", False)
+    (tmp_path / "session.yaml").write_text("screen_pages: {7: 3}\n", encoding="utf-8")
+    import pytest
+    with pytest.raises(ValueError, match="no screen 7"):
+        sm.relabel(md, tmp_path, ocr=lambda p: "")

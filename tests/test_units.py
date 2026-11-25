@@ -786,3 +786,21 @@ def test_session_file_names_match_macos_narrow_space(tmp_path):
     assert find_file(tmp_path, "Screen Recording 2026-11-24 at 6.06.38 PM.mov") == real
     assert find_file(tmp_path, real.name) == real
     assert find_file(tmp_path, "Screen Recording 2026-11-24 at 6.06.39 PM.mov") is None
+
+
+def test_citations_are_checked_against_their_pages(tmp_path):
+    from knowlib.handbook.maker import Lecture, Slide, citation_checks
+    lec = Lecture("x", "k", "T", tmp_path)
+    lec.slides = [Slide(1, "00:00", "01:00", text="Agenda: capacity planning, strategies, time management"),
+                  Slide(2, "01:00", "02:00", text="Break-even analysis three machines fixed costs volumes",
+                        cite="deck 3, slide 26", document="d.pdf", page=26, how="between neighbours"),
+                  Slide(3, "02:00", "03:00", text="Takt time is the pulse of the business", cite="deck 3, slide 31",
+                        document="d.pdf", page=31, how="text")]
+    draft = ("## A\n\n- Peer evaluation starts with this course: members grade on a Google form whether "
+             "fellow members took part (slide 1).\n"
+             "- Takt time is the pulse of the business (slide 3).\n"
+             "- Three machines, fixed costs and volumes (slide 2).\n\n*Slides 1–3*\n")
+    got = citation_checks(draft, lec)
+    assert any("Peer evaluation" in x for x in got)                     # said while the agenda was up
+    assert not any("pulse" in x for x in got)                           # on the slide: fine
+    assert sum("slide 2 is cited" in x and "guessed" in x for x in got) == 1   # once, not per citation

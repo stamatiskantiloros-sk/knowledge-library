@@ -8,6 +8,15 @@ on this Mac, to the document page it shows:
    total is the page count of one of the documents (several with that count: the text decides).
 2. Otherwise the words on the screen against the words of every page: the page that contains most of
    the screen's words and shares the most with it, ties going to the page nearest the last match.
+3. A counter whose total no document has (the lecturer presented another version of a deck, with fewer
+   or more pages) is read through the offset the screens matched on either side show: "24 / 37"
+   between screens where 22 / 37 was page 26 and 28 / 37 was page 32 is page 28. Where it disagrees
+   with a text match, the match is kept but marked for checking ("text, counter disagrees").
+4. A screen still unmatched between two matches of one document is guessed from the pages between
+   them ("between neighbours"). A guess is marked as such: the handbook does not cite it unchecked.
+
+A match checked by eye is written into the lecture's session.yaml, `screen_pages: {37: 28}` (the page of
+the document the screen was matched to, or "file.pdf p. 28", or null for none), and wins ("checked").
 
 A screen that matches nothing (a web page, a video, a file browser) keeps its recording time as its
 only reference. The match is written into the lecture file as a **From:** line, with the page drawn
@@ -53,7 +62,11 @@ class Doc:
 class Match:
     doc: Doc
     page: int
-    how: str                 # "page counter" or "text"
+    how: str                 # "page counter", "text", "page counter, offset", "checked"; or a guess
+
+    @property
+    def sure(self) -> bool:
+        return self.how in SURE
 
     def cite(self) -> str:
         return self.doc.cite([self.page])
@@ -115,6 +128,55 @@ def _counter(ocr: str, w: set[str], docs: list[Doc]) -> Match | None:
     return None
 
 
+SURE = {"page counter", "text", "page counter, offset", "checked"}   # anything else is a guess to check
+
+
+def _raw_counter(ocr: str) -> tuple[int, int] | None:
+    for n, total in COUNTER.findall(ocr or ""):
+        n, total = int(n), int(total)
+        if total >= 3 and 1 <= n <= total:
+            return n, total
+    return None
+
+
+def _counter_offsets(screens: list[tuple[str, str]], out: list[Match | None]) -> None:
+    """Read a counter of another version of a document through the offset that the text matches with the
+    nearest counters show (the versions differ by pages inserted here and there, so only counters on both
+    sides with one offset are trusted). A screen scrolled between two pages shows a counter that can be
+    one page off: the page must hold the screen's words at least as well as the pages beside it."""
+    counters = [_raw_counter(ocr) for _, ocr in screens]
+    anchors = [(counters[i][0], counters[i][1], out[i].doc, out[i].page - counters[i][0]) for i in range(len(out))
+               if out[i] and out[i].how in ("text", "page counter") and counters[i]
+               and len(out[i].doc.pages) != counters[i][1]]
+    for i, m in enumerate(out):
+        c = counters[i]
+        if not c or (m and m.how == "page counter"):
+            continue
+        same = [x for x in anchors if x[1] == c[1]]
+        below = [x for x in same if x[0] <= c[0]]
+        above = [x for x in same if x[0] >= c[0]]
+        if not below or not above:
+            continue
+        lo = {(d.path, off) for n, _, d, off in below if n == max(x[0] for x in below)}
+        hi = {(d.path, off) for n, _, d, off in above if n == min(x[0] for x in above)}
+        if len(lo | hi) != 1:
+            continue                                     # pages were inserted between the anchors
+        d = next(x[2] for x in same if x[2].path == next(iter(lo))[0])
+        page = c[0] + next(iter(lo))[1]
+        if not 1 <= page <= len(d.pages):
+            continue
+        read = words(screens[i][0])                      # the screen's reading; else the whole frame's OCR
+        w = read or words(screens[i][1])
+        if w:
+            held = [len(w & d.pages[p - 1]) if 1 <= p <= len(d.pages) else -1 for p in (page - 1, page, page + 1)]
+            if (read and held[1] < 2) or held[1] < max(held[0], held[2]):
+                continue                                 # scrolled: a page beside it holds more of the screen
+        if m is None or m.how != "text":
+            out[i] = Match(d, page, "page counter, offset")
+        elif m.doc is not d or m.page != page:
+            out[i] = Match(m.doc, m.page, "text, counter disagrees")
+
+
 def match_screens(screens: list[tuple[str, str]], docs: list[Doc]) -> list[Match | None]:
     """screens: (text read from the screen, OCR of the whole frame) in the order shown."""
     out: list[Match | None] = []
@@ -137,6 +199,7 @@ def match_screens(screens: list[tuple[str, str]], docs: list[Doc]) -> list[Match
         out.append(found)
         if found:
             last = found
+    _counter_offsets(screens, out)
     _between_neighbours(screens, out)
     return out
 
@@ -197,9 +260,12 @@ def relabel(md: Path, folder: Path, labels: dict | None = None, ocr=None) -> dic
     from .redact import lines as vision_lines
     md = Path(md)
     raw = md.read_text(encoding="utf-8")
-    if labels is None and (Path(folder) / "session.yaml").exists():
+    session = {}
+    if (Path(folder) / "session.yaml").exists():
         import yaml
-        labels = (yaml.safe_load((Path(folder) / "session.yaml").read_text(encoding="utf-8")) or {}).get("labels")
+        session = yaml.safe_load((Path(folder) / "session.yaml").read_text(encoding="utf-8")) or {}
+    if labels is None:
+        labels = session.get("labels")
     docs = load_docs(folder, labels)
     raw = FROM.sub("", raw)
     raw = re.sub(r"\n{3,}", "\n\n", raw)
@@ -218,6 +284,8 @@ def relabel(md: Path, folder: Path, labels: dict | None = None, ocr=None) -> dic
         screens.append((text, seen))
         images.append(img)
     matches = match_screens(screens, docs)
+    numbers = [int(b.group(1)) for b in blocks]
+    checked(matches, numbers, docs, session.get("screen_pages") or {})
     assets = md.parent / "assets" if (md.parent / "assets").is_dir() else None
     if assets is None:                                   # a library's sources: images are under _knowlib/assets/<id>
         first = next((m for m in images if m), None)
@@ -241,6 +309,32 @@ def relabel(md: Path, folder: Path, labels: dict | None = None, ocr=None) -> dic
         key = m.how if m else "none"
         by[key] = by.get(key, 0) + 1
     return {"screens": len(matches), **by}
+
+
+def checked(matches: list[Match | None], numbers: list[int], docs: list[Doc], pages: dict) -> None:
+    """Apply the matches checked by eye (session.yaml `screen_pages`): screen -> page of the document the
+    screen was matched to (or its neighbours', or the only one), "file.pdf p. N", or null for none."""
+    for screen, page in pages.items():
+        if int(screen) not in numbers:
+            raise ValueError(f"screen_pages: there is no screen {screen}")
+        i = numbers.index(int(screen))
+        if page is None or str(page).lower() == "none":
+            matches[i] = None
+            continue
+        if m := re.fullmatch(r"(.+?) p\. ?(\d+)", str(page)):
+            d = next((d for d in docs if d.path.name == m[1]), None)
+            if d is None:
+                raise ValueError(f"screen_pages: screen {screen}: no document {m[1]}")
+            n = int(m[2])
+        else:
+            near = [x for x in [matches[i], *reversed(matches[:i]), *matches[i + 1:]] if x]
+            d = near[0].doc if near else (docs[0] if len(docs) == 1 else None)
+            if d is None:
+                raise ValueError(f"screen_pages: screen {screen}: name the document, \"file.pdf p. {page}\"")
+            n = int(page)
+        if not 1 <= n <= len(d.pages):
+            raise ValueError(f"screen_pages: screen {screen}: {d.path.name} has no page {n}")
+        matches[i] = Match(d, n, "checked")
 
 
 def _rel(path: Path, base: Path) -> str:

@@ -25,7 +25,8 @@ from .. import progress
 from ..contract import slugify
 from ..manifest import Manifest
 from ..media.ocr import numbers
-from ..media.screenmatch import FROM
+from ..media.screenmatch import FROM, SURE
+from ..media.screenmatch import words as screen_words
 from .. import privacy
 from ..providers import get_vision_provider, parse_json, release_all
 from ..runner import open_library, process
@@ -73,7 +74,7 @@ What the book is
 Slides: text or picture, never both
 4. Show a slide (write [[slide N]] on its own line) only where its picture carries what words cannot do as well: a model, a chart, a process or flow diagram, a table of data. The text around it then adds only what the picture does not say: the point, and what the lecturer said about it. A slide that is a list, a definition or a statement is written into the text and not shown.
 5. Show each slide at its clearest: look at the slides before and after it, and pick the step where everything is visible and nothing covers it (not a dimmed build or a slide with an overlay); where a later slide repeats an earlier one and adds to it, show only the later one. A slide with a "Page" line is shown as that page, drawn from the document, not as the screen.
-6. Cite the slides by their numbers in this brief (a page under "Pages no screen captured" as its heading names it). After a definition, figure or fact taken from a slide, add a short "(slide N)", sparingly: once per fact, not after every sentence. End each section with its sources in italics on a line of their own: *Slides 10–13*. The finish step turns each number into the document and page the screen showed ("deck 2-2, slide 16"), or the time in class for a screen that showed no document: never write a document's own page numbers yourself. Never write "on the slide", "the slide says" or "Slide:": the citation and the arrangement show where things come from.
+6. Cite the slides by their numbers in this brief (a page under "Pages no screen captured" as its heading names it). After a definition, figure or fact taken from a slide, add a short "(slide N)", sparingly: once per fact, not after every sentence. Cite a slide only for what is written or drawn on it: a point the lecturer made while a slide was up (an announcement, an aside, an answer to a student) has no citation, however long the slide stayed on screen; the finish step flags a citation whose page holds almost none of the sentence's words. A slide marked PAGE GUESSED may show another page: compare its image with the page before citing it. End each section with its sources in italics on a line of their own: *Slides 10–13*. The finish step turns each number into the document and page the screen showed ("deck 2-2, slide 16"), or the time in class for a screen that showed no document: never write a document's own page numbers yourself. Never write "on the slide", "the slide says" or "Slide:": the citation and the arrangement show where things come from.
 7. Where a slide has its document page ("Page" line, and the page's text below the reading), the page is the source: take its text, numbers and tables from the page, complete, and use the screen only for what the lecturer showed and when. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
 
 Accuracy
@@ -150,6 +151,11 @@ class Slide:
     document: str = ""                   # that document's file name
     page: int = 0
     page_image: str = ""                 # the page drawn from the document, relative to the lecture file
+    how: str = ""                        # how the screen was matched to the page: a guess unless in SURE
+
+    @property
+    def guessed(self) -> bool:
+        return bool(self.cite) and self.how not in SURE
 
     def usable(self) -> bool:
         """A slide with no reading and nothing said is an opening image or a failed reading."""
@@ -217,6 +223,7 @@ def parse_source(path: Path, source_id: str = "", key: str = "") -> Lecture:
             discussed="*Not discussed in the recording.*" not in b,
             cite=src["cite"] if src else "", document=src["file"] if src else "",
             page=int(src["page"]) if src else 0, page_image=(src["image"] or "") if src else "",
+            how=src["how"] if src else "",
             ocr=" ".join(re.findall(r"\*\*OCR text[^\n]*\n(.*?)(?=\n\*\*|\Z)", b, re.S))))
     if before and lecture.slides:
         lecture.slides[0].spoken = f"{before} {lecture.slides[0].spoken}".strip()
@@ -801,6 +808,8 @@ def brief(lecture: Lecture, materials: list[tuple[str, str]], *, notes_dir: Path
                   f"Image: {lecture.folder / s.frame}"]
         if s.cite:
             lines.append(f"Page ({s.cite}, the source): {lecture.folder / s.page_image if s.page_image else s.document}")
+        if s.guessed:
+            lines.append(f"PAGE GUESSED ({s.how}): compare the image with the page before citing it")
         if not s.discussed:
             lines.append("Not discussed in the recording")
         if s.flagged:
@@ -854,6 +863,7 @@ def finish_lecture(out: Path, meta: dict) -> dict:
     issues += [f"slide {s.n}: table numbers not in the text: {', '.join(lost)}" for s in lecture.slides
                if f"[[slide {s.n}]]" not in draft and (lost := missing_table_numbers(shown, s))]
     issues += dropped_hedges(draft, lecture.slides)
+    issues += citation_checks(draft, lecture)
     cfg = _library_config(folder)
     hb = cfg.get("handbook") or {}
     book = _place_figures(draft, lecture.slides, lecture, out, issues)
@@ -1085,6 +1095,78 @@ def _slides_of(section: str) -> set[int]:
         for a, b in re.findall(r"(\d+)(?:\s*[–-]\s*(\d+))?", line):
             cited |= set(range(int(a), int(b or a) + 1))
     return cited
+
+
+CITED = re.compile(r"\((?P<inner>[^()]*\b[Ss]lides? \d[^()]*)\)")
+SUPPORT_MIN = 0.2       # share of a claim's words that the cited pages must hold
+SUPPORT_WORDS = 3       # ... unless they hold at least this many of them
+
+
+def _stems(text: str) -> set[str]:
+    return {w[:5] for w in screen_words(text) if len(w) >= 4}
+
+
+def citation_checks(draft: str, lecture: Lecture) -> list[str]:
+    """Citations a student could not trust. (1) A cited screen whose document page was guessed, not
+    read (unless checked in session.yaml). (2) A sentence cited to pages that hold almost none of its
+    words: it was said while the slide was up, or it cites the wrong page. Either way a pointer to look."""
+    by_n = {s.n: s for s in lecture.slides}
+    docs = {}                                             # label -> a slide naming that document
+    for s in lecture.slides:
+        if s.cite and (pm := PAGE.match(s.cite)):
+            docs.setdefault(pm["label"], s)
+    pages: dict[tuple[str, int], str] = {}
+
+    def page_text(document: str, page: int) -> str:
+        if (document, page) not in pages:
+            pages[document, page] = document_page(lecture, Slide(0, "", "", document=document, page=page))
+        return pages[document, page]
+
+    out, guessed = [], set()
+    for line in draft.splitlines():
+        if line.startswith(("#", "[[", "![", ">")):
+            continue
+        sources_line = re.fullmatch(r"\*(Slides?.*)\*", line.strip())
+        cites = [(m.start(), m.end(), m["inner"]) for m in CITED.finditer(line)]
+        if sources_line:
+            cites = [(0, 0, sources_line[1])]
+        prev = 0
+        for start, end, inner in cites:
+            claim = re.sub(r"^\s*[-*\d.]+\s+", "", line[prev:start]).replace("**", "")
+            prev = end
+            held, named = set(), []
+            for part in inner.split(";"):
+                part = part.strip()
+                if pm := PAGE_CITE.fullmatch(part):
+                    s = docs.get(pm["label"])
+                    for a, b in re.findall(r"(\d+)(?:–(\d+))?", pm["runs"]):
+                        for n in range(int(a), int(b or a) + 1):
+                            held |= _stems(page_text(s.document, n)) if s else set()
+                    named.append(part)
+                    continue
+                for a, b in re.findall(r"(\d+)(?:\s*[–-]\s*(\d+))?", re.sub(r"^[Ss]lides?\s*", "", part)):
+                    for n in range(int(a), int(b or a) + 1):
+                        s = by_n.get(n)
+                        if not s:
+                            continue
+                        if s.guessed and n not in guessed:
+                            guessed.add(n)
+                            out.append(f"slide {n} is cited, but its page ({s.cite}) was guessed ({s.how}), not read: "
+                                       f"compare {s.frame} with the page and set it in session.yaml screen_pages")
+                        held |= _stems(s.text if not s.from_ocr else "")
+                        if s.cite:
+                            held |= _stems(page_text(s.document, s.page))
+                        named.append(f"slide {n}")
+            if sources_line or not named:
+                continue
+            want = _stems(claim)
+            if len(want) < 4:
+                continue
+            got = want & held
+            if len(got) < SUPPORT_WORDS and len(got) / len(want) < SUPPORT_MIN:
+                out.append(f"citation ({inner}) names pages that hold almost nothing of \"{claim.strip()[:160]}\": "
+                           "cite a slide only for what is on it; a point made while it was up has no citation")
+    return out
 
 
 def dropped_hedges(draft: str, slides: list[Slide]) -> list[str]:
