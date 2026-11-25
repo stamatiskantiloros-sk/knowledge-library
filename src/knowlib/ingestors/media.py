@@ -292,6 +292,9 @@ class MediaSessionIngestor(Ingestor):
                      for k in kept], docs)
                 stats["documents"] = {"matched": sum(1 for m in matches if m), "screens": len(kept),
                                       "files": [d.path.name for d in docs]}
+                if item.sidecar.get("screen_pages"):   # checked against an earlier ingest: its screen numbers may differ
+                    flags.append("session.yaml screen_pages were checked against an earlier ingest: compare those "
+                                 "screens again, then run `knowlib match-screens`")
 
         # ---- write the source ----------------------------------------------------------
         w = ctx.writer(sid)

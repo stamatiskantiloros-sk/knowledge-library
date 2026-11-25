@@ -75,7 +75,7 @@ def library_files(ctx: Context):
 TOP_FILES = ("AGENTS.md", "CLAUDE.md", "INDEX.md", "glossary.md", ".ignore")
 
 
-PRESENTATION_ONLY = {"labels"}      # session.yaml keys that do not change what ingestion reads
+PRESENTATION_ONLY = {"labels", "screen_pages"}   # session.yaml keys only `knowlib match-screens` reads
 
 
 def item_hash(item: InputItem, hc: HashCache) -> str:
@@ -87,7 +87,7 @@ def item_hash(item: InputItem, hc: HashCache) -> str:
         for p in sorted(item.paths, key=lambda p: p.name):
             h.update(p.name.encode())
             h.update(hc.file(p).encode())
-        if item.sidecar:                    # labels only name documents: `knowlib match-screens` redoes them
+        if item.sidecar:                    # labels and checked pages: `knowlib match-screens` applies them
             kept = {k: v for k, v in item.sidecar.items() if k not in PRESENTATION_ONLY}
             h.update(json.dumps(kept, sort_keys=True, default=str).encode())
         return h.hexdigest()
