@@ -589,7 +589,7 @@ def test_the_brief_asks_for_fidelity_and_a_claim_by_claim_check(tmp_path):
     rules = brief(Lecture("lec", "L/", "Lecture 1", tmp_path, [Slide(1, "0:00", "1:00", text="Title")]), []).split("## Slides")[0]
     assert "Keep the lecturer's scope and qualifiers" in rules and "never \"not X\"" in rules
     assert "give both, each with its source, and point the student to the document" in rules
-    assert "Check the draft claim by claim" in rules and rules.index("21. Check") < rules.index("When done")
+    assert "Check the draft claim by claim" in rules and rules.index("22. Check") < rules.index("When done")
     assert "Student presentations and the class discussion are material" in rules       # kept, attributed
     assert "Never credit a student's point to the lecturer" in rules and "18. Name no one in the room." in rules
 

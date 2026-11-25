@@ -94,12 +94,13 @@ People
 Style
 19. Be condensed: terse bullets, one idea each, fragments where they read well, short plain sentences elsewhere. No restating, no connective padding, no anecdotes or class chatter that carry no idea. Course admin only as far as a student must know it: grading, exam format and allowed aids, required readings, textbooks in one line. As a guide, about a third of the transcript's length or less (roughly 30 words per minute of lecture).
 20. Be simple, focused and precise. Name what the lecture names: companies, products, places, years and numbers; never blur them into stand-ins ("a truck maker", "big customers"). Plain words a student understands without decoding: no shorthand labels or symbols in place of words ("Pick:", "=" for "means").
+21. Fit tables to one column of a two-column page. A table whose columns hold words, not numbers, has at most two: merge its first column into the second, the label in bold at the start of the cell ("**Cycle time:** how long does the work take?"), so long text does not wrap into tall, narrow rows. A table of numbers keeps all its columns.
 
 
 Check before finishing
-21. Check the draft claim by claim against its sources: for each claim find the transcript passage (its time) or the slide it comes from and read it again. Fix or remove anything the passage does not say, or says less strongly, more narrowly or about something else. Check every number with what it was said about, and every place the lecturer and a document disagree (rule 11).
-22. The finish step lists, under "To check" in review.md, sentences with absolute words (always, never, every, only, not...) whose source passage hedges. Reread each passage and fix the sentence, or leave it if the lecturer said it that strongly, then finish again.
-23. A "Speech check" line under what was said marks a passage that a second speech model heard differently, on a name, a number or a negation. Take neither version on trust: confirm the word from a slide or document. If nothing confirms it, leave the detail out or write the point without it, and say so in corrections.md.
+22. Check the draft claim by claim against its sources: for each claim find the transcript passage (its time) or the slide it comes from and read it again. Fix or remove anything the passage does not say, or says less strongly, more narrowly or about something else. Check every number with what it was said about, and every place the lecturer and a document disagree (rule 11).
+23. The finish step lists, under "To check" in review.md, sentences with absolute words (always, never, every, only, not...) whose source passage hedges. Reread each passage and fix the sentence, or leave it if the lecturer said it that strongly, then finish again.
+24. A "Speech check" line under what was said marks a passage that a second speech model heard differently, on a name, a number or a negation. Take neither version on trust: confirm the word from a slide or document. If nothing confirms it, leave the detail out or write the point without it, and say so in corrections.md.
 
 When done, run: knowlib handbook --finish --output <the folder above this one>"""
 
