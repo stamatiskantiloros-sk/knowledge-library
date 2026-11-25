@@ -38,6 +38,14 @@ class VisionProvider(ABC):
         """Free model memory before the next stage loads its own model."""
 
 
+_BAD_ESCAPE = re.compile(r'\\(?=[bfrt][a-zA-Z])|\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})')    # \frac, \beta, \times: LaTeX
+
+
+def _repair(c: str) -> str:
+    """LaTeX in a reply (\\frac, \\$, \\sum) is not a JSON escape: keep the backslash as a character."""
+    return _BAD_ESCAPE.sub(r"\\\\", c)
+
+
 def parse_json(text: str) -> dict:
     """Pull the first JSON object out of a model reply (handles ```json fences and chatter)."""
     text = text.strip()
@@ -65,10 +73,11 @@ def parse_json(text: str) -> dict:
                     candidates.append(text[start:i + 1])
                     break
     for c in candidates:
-        try:
-            return json.loads(c)
-        except json.JSONDecodeError:
-            continue
+        for attempt in (c, _repair(c)):
+            try:
+                return json.loads(attempt, strict=False)    # strict=False: raw newlines inside strings
+            except json.JSONDecodeError:
+                continue
     raise ValueError(f"no JSON object in model reply ({len(text)} chars): {text[:300]!r} ... {text[-300:]!r}")
 
 

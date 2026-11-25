@@ -221,6 +221,11 @@ def run(root: Path, *, note_slugs: list[str] | None = None, overrides: dict | No
             try:
                 verdicts = {int(v["n"]): v for v in parse_json(reply).get("claims", [])}
             except (ValueError, KeyError, TypeError, AttributeError):
+                verdicts = {}
+            if not verdicts and (got := VERDICT_RE.findall(reply)):   # broken JSON: keep every complete verdict
+                verdicts = {int(n): {"n": int(n), "verdict": v.lower(), "reason": (r or "").replace('\\"', '"')}
+                            for n, v, r in got}
+            if not verdicts:
                 why = ("it was cut off at the token limit; raise notes_review.max_tokens or split the note"
                        if cut else f"rerun after deleting its entry in {cache.path.name}")
                 findings.append(Finding("review", "warning", note.slug, f"the reviewer's reply could not be read: {why}"))

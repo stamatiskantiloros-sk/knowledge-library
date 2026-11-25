@@ -465,3 +465,12 @@ def test_revise_refuses_a_revision_that_breaks_the_note(library, monkeypatch):
         (library / ".work" / "revise_notes_cache.json").unlink(missing_ok=True)
         assert noterevise.run(library, writer={"backend": "fake"}, overrides=session) == []
         assert (library / "notes" / "wacc.md").read_text() == before
+
+
+def test_parse_json_reads_latex_and_newlines_in_reasons():
+    from knowlib.providers.base import parse_json
+    reply = '```json\n{"claims": [{"n": 1, "verdict": "supported", "reason": "P2 gives $F = S \\times \\frac{1+r_\\$}{1+r}$"},\n' \
+            '{"n": 2, "verdict": "partly", "reason": "two\nlines"}]}\n```'
+    got = parse_json(reply)["claims"]
+    assert got[0]["reason"] == "P2 gives $F = S \\times \\frac{1+r_\\$}{1+r}$"
+    assert got[1]["reason"] == "two\nlines"

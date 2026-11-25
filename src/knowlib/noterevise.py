@@ -19,7 +19,7 @@ from .handbook.maker import Cache
 from .manifest import Manifest
 from .models import writer_conflict
 from .notecheck import Source, claims, load_notes, run as check_run
-from .notereview import build, reviewer_section
+from .notereview import VERDICT_RE, build, reviewer_section
 from .providers import get_vision_provider
 from .providers.base import parse_json
 from .runner import open_library
@@ -31,7 +31,7 @@ Fix only the flagged claims, using only the passages:
 - partly: narrow the claim to what the passages say (drop the overstatement, the generalization or the extra precision), or, if the reason names another passage that holds it, cite that passage's source and place instead.
 - unsupported: if another passage below supports a corrected version, rewrite the claim to match it and cite it; otherwise delete the claim.
 - unclear: cite the place that holds the claim if a passage shows it; otherwise leave the claim as it is.
-Keep every other line of the note exactly as it is: the frontmatter, headings, unflagged claims and their citations. Keep the citation form [@source-id, locator], with the source id and locator exactly as a passage's header gives them. Never add a claim, a number or a source that the passages do not hold. A figure you calculate from the passages must say "(calculated here)".
+Keep every other line of the note exactly as it is: the frontmatter, headings, unflagged claims and their citations. Keep the citation form [@source-id, locator], with the source id and locator exactly as a passage's header gives them. Never add a claim, a number or a source that the passages do not hold. A figure you calculate from the passages must say "(calculated here)". Some book extracts print =, + and − as 5, 1 and 2 (so "5 0.0 1 0.9(23%)" reads "= 0.0 + 0.9(−3%)"): read the words around a formula before you change a sign or a number, and if the reviewer's reason rests on such a misreading, keep the claim.
 
 Flagged claims (number, verdict, the claim, the reviewer's reason):
 
@@ -60,7 +60,7 @@ def flagged(note, sources: dict, held: set, remote: bool, max_chars: int, cache:
     try:
         verdicts = parse_json(reply).get("claims", [])
     except (ValueError, AttributeError):
-        return [], ""
+        verdicts = [{"n": n, "verdict": v, "reason": r} for n, v, r in VERDICT_RE.findall(reply)]
     out = []
     for v in verdicts:
         try:
