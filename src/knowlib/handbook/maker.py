@@ -78,7 +78,7 @@ Slides: text or picture, never both
 7. Where a slide has its document page ("Page" line, and the page's text below the reading), the page is the source: take its text, numbers and tables from the page, complete, and use the screen only for what the lecturer showed and when. Open the image of every flagged slide, every slide with a table, formula, chart or diagram, and every slide whose text looks wrong. The image decides. List each correction in corrections.md: slide, what the text said, what the image shows.
 
 Accuracy
-8. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said. Use LaTeX for formulas and Markdown tables with the same number of cells in every row.
+8. Copy every number, formula and table exactly. Do not compute, count or total anything that was not shown or said. Use LaTeX for formulas and Markdown tables with the same number of cells in every row. Keep the slide's notation, in running text too: the page text writes a subscript after an underscore (Q_BEP), so write $Q_{BEP}$, never QBEP; a transcript writes notation as it sounds, so take it from the page or the image.
 9. State things exactly as strongly as the source does: keep its hedges and its wording of degree ("that's a problem", not "it fails"; "can", "often", "may"). Do not upgrade an example into a rule or a reason into a definition.
 10. Keep the lecturer's scope and qualifiers. "In general X, but not when Y" stays that, never "not X". A remark about one setting (personal life, one company, one example) is not stretched to another (business, every company). A number stays with what it was said about: "7 or 8 of 10 decisions in personal life involve money" does not become a claim about decisions at work.
 11. Where the lecturer contradicts a slide, a course document or something said earlier (a grade weight that differs from the syllabus), give both, each with its source, and point the student to the document. Do not silently pick one.
@@ -889,13 +889,14 @@ def document_page(lecture: Lecture, s: Slide) -> str:
     """The text of the document page a screen showed, from the PDF beside the lecture (or in the folder
     the lecture was ingested from)."""
     import pymupdf
+    from ..pdftext import page_text
     root = _library_root(lecture.folder)
     for folder in [lecture.folder, *([root / lecture.original] if root and lecture.original else [])]:
         pdf = Path(folder) / s.document
         if s.document and pdf.exists():
             try:
                 doc = pymupdf.open(pdf)
-                return doc[s.page - 1].get_text().strip() if 1 <= s.page <= doc.page_count else ""
+                return page_text(doc[s.page - 1]).strip() if 1 <= s.page <= doc.page_count else ""
             except Exception:  # noqa: BLE001 - the page image and the screen remain
                 return ""
     return ""

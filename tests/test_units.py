@@ -804,3 +804,23 @@ def test_citations_are_checked_against_their_pages(tmp_path):
     assert any("Peer evaluation" in x for x in got)                     # said while the agenda was up
     assert not any("pulse" in x for x in got)                           # on the slide: fine
     assert sum("slide 2 is cited" in x and "guessed" in x for x in got) == 1   # once, not per citation
+
+
+def test_page_text_keeps_subscripts():
+    """A subscript is a smaller span set lower; plain text glues it on ("QBEP"). Raised marks stay."""
+    import pymupdf
+    from knowlib.pdftext import page_text
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "1 Machine  Q", fontsize=18)
+    x = 72 + pymupdf.get_text_length("1 Machine  Q", fontsize=18)
+    page.insert_text((x, 104.5), "BEP", fontsize=12)
+    page.insert_text((x + pymupdf.get_text_length("BEP", fontsize=12), 100), " = 9,600 / 30 = 320", fontsize=18)
+    page.insert_text((72, 160), "the 4", fontsize=18)
+    page.insert_text((72 + pymupdf.get_text_length("the 4", fontsize=18), 154), "th", fontsize=12)
+    page.insert_text((72, 220), "Below the BEP no profit.", fontsize=16)
+    assert "QBEP" in page.get_text()
+    text = page_text(page)
+    assert "1 Machine  Q_BEP = 9,600 / 30 = 320" in text
+    assert "_th" not in text and "Below the BEP no profit." in text
+    assert text.replace("_", "") == page.get_text()

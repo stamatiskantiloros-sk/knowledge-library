@@ -16,6 +16,7 @@ import shutil
 from pathlib import Path
 
 from .. import progress
+from ..pdftext import page_text
 from ..contract import SourceRecord, hash_file, make_id, stage
 from .figures import marker as figure_marker
 from .figures import read_figures
@@ -36,7 +37,7 @@ def _formula_text(pdf, prov) -> str:
     import fitz
     page = pdf[prov.page_no - 1]
     box = prov.bbox.to_top_left_origin(page.rect.height)
-    return page.get_text("text", clip=fitz.Rect(box.l, box.t, box.r, box.b)).strip()
+    return page_text(page, clip=fitz.Rect(box.l, box.t, box.r, box.b)).strip()
 
 
 def _docling(path: Path, cfg: dict) -> str:
@@ -85,7 +86,7 @@ def _pymupdf(path: Path, cfg: dict) -> str:
             chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True)
             texts = [c["text"] for c in chunks]
         except ImportError:
-            texts = [p.get_text("text") for p in doc]
+            texts = [page_text(p) for p in doc]
         return "\n\n".join(f"{page_marker(doc, i + 1)}\n\n{t.strip()}" for i, t in enumerate(texts))
 
 
@@ -241,7 +242,7 @@ def ingest_pdf_file(path: Path, ctx: Context, *, origin: list[str], content_hash
         filled = markdown.count("```formula\n")
         if filled:
             flags.append(f"{filled} formulas read from the PDF text layer: the symbols are kept, the "
-                         "layout is not, so check fractions and sub- and superscripts against the page")
+                         "layout is not (subscripts are kept as Q_BEP), so check fractions and superscripts against the page")
         if gaps:
             flags.append(f"{gaps} formulas missing: neither {used} nor the text layer had them")
         book = outline(path)
