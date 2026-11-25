@@ -101,7 +101,8 @@ DEFAULTS: dict[str, Any] = {
     },
     "handbook": {                        # overrides of frame_selection for the writing model
         "language": "English",
-        "style_file": None,                  # a CSS file (relative to the library) for the PDF; None: the plain default
+        "style_file": None,                  # a CSS file (relative to the library) for the PDF; None: the plain default.
+                                             # The house style is templates/handbook-style.css
         "speaker": "the lecturer",           # what the book calls the person teaching ("the professor", ...)
         "byline": None,                      # one line under the title, e.g. who made it
         "course": None,                      # course name under the title and in the PDF's name (default: the library folder)
