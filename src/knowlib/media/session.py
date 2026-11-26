@@ -177,9 +177,16 @@ def join_parts(sess: Session, parts: list, work: Path) -> list[dict]:
         for _, f, _ in items:
             cmd += ["-i", str(f)]
         chain = "".join(f"[{i}:a]" for i in range(len(items)))
-        cmd += ["-filter_complex", f"{chain}concat=n={len(items)}:v=0:a=1,aformat=sample_rates=16000:channel_layouts=mono",
-                "-c:a", "flac", str(out.with_suffix(".tmp.flac"))]
-        run(cmd)
+        # Written on this Mac's disk, then copied: ffmpeg rewrites a FLAC's header when it closes the file, and
+        # on an SMB share that close can fail ("Bad file descriptor") after every byte was written.
+        import shutil
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="knowlib-parts-") as tmp:
+            local = Path(tmp) / out.name
+            cmd += ["-filter_complex", f"{chain}concat=n={len(items)}:v=0:a=1,aformat=sample_rates=16000:channel_layouts=mono",
+                    "-c:a", "flac", str(local)]
+            run(cmd)
+            shutil.copyfile(local, out.with_suffix(".tmp.flac"))
         out.with_suffix(".tmp.flac").rename(out)
     bounds, t = [], 0.0
     sess.part_videos = []
