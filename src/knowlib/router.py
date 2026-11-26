@@ -73,7 +73,11 @@ def discover(inbox: Path, ignore: list[str] | None = None, skip=None) -> list[In
     ignore = list(ignore or [])
 
     def skipped(p: Path) -> bool:
-        return any(fnmatch.fnmatch(p.name, pat) for pat in ignore) or bool(skip and skip(p))
+        """A pattern with a slash matches the path inside the inbox ("Lecture 3/New Balance*.xlsx",
+        a copy of a file already ingested from another folder); one without matches any file or folder name."""
+        rel = p.relative_to(inbox).as_posix() if p.is_relative_to(inbox) else p.name
+        return (any(fnmatch.fnmatch(rel if "/" in pat else p.name, pat.rstrip("/")) for pat in ignore)
+                or bool(skip and skip(p)))
     files_first: list[InputItem] = []
     sessions: list[InputItem] = []
     urls: list[InputItem] = []

@@ -19,7 +19,7 @@ DEFAULTS: dict[str, Any] = {
         "sources": "sources",
         "notes": "notes",
         "work": ".work",          # stage caches, extracted frames; safe to delete
-        "ignore": [],             # glob patterns (file or folder names) the router skips
+        "ignore": [],             # glob patterns the router skips: a file or folder name, or a path inside the library ("Lecture 3/x.xlsx")
         "layout": None,           # e.g. "{course}/{date}/{name}": links in organized/ to each source
     },
     # Global privacy switch. A session can also set local_only: true in its session.yaml.

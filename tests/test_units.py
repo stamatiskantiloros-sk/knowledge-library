@@ -390,6 +390,16 @@ def test_router_rules(tmp_path):
     assert [i.kind for i in items].index("session") > max(n for n, i in enumerate(items) if i.kind == "file")
 
 
+def test_ignore_by_path_skips_one_folder_s_copy(tmp_path):
+    for d in ("Lecture 2", "Lecture 3"):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "case.xlsx").write_bytes(b"x")
+    (tmp_path / "Lecture 3" / "new.pdf").write_bytes(b"x")
+    keys = {i.key for i in discover(tmp_path, ["Lecture 3/case.xlsx"])}
+    assert "Lecture 2/case.xlsx" in keys and "Lecture 3/case.xlsx" not in keys and "Lecture 3/new.pdf" in keys
+    assert not {k for k in (i.key for i in discover(tmp_path, ["case.xlsx"])) if k.endswith("case.xlsx")}
+
+
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 def test_alignment_offset_drift_and_pause(tmp_path):
     from scipy.signal import resample_poly
