@@ -108,11 +108,13 @@ def assemble(paths: list[Path], folder: Path, sidecar: dict, work: Path) -> Sess
                    info=info, glossary=_glossary(sidecar, folder))
 
 
-def video_offset(audio: Path, video: Path, work: Path, max_lag_s: float = 240.0, rate: int = 10) -> tuple[float, float]:
+def video_offset(audio: Path, video: Path, work: Path, max_lag_s: float | None = None, rate: int = 10) -> tuple[float, float]:
     """How far the video's timeline is behind the audio's: audio time = video time + offset. Found by
     matching the loudness envelopes of the audio and the video's own sound track (a screen recording
     picks up the room faintly). Returns (offset_s, match), match being the correlation at the best lag
-    (around 0.3 or more is a clear match; below 0.15, treat the offset as unknown)."""
+    (around 0.3 or more is a clear match; below 0.15, treat the offset as unknown). Every lag that
+    leaves a minute of overlap is tried unless max_lag_s narrows it: a phone may record half an hour
+    before the screen recording starts."""
     def envelope(path: Path, name: str) -> np.ndarray:
         x, sr = load_wav(extract_wav(path, work / name))
         hop = sr // rate
@@ -123,7 +125,10 @@ def video_offset(audio: Path, video: Path, work: Path, max_lag_s: float = 240.0,
     a = envelope(audio, f"off_a_{audio.stem}.wav")
     v = envelope(video, f"off_v_{video.stem}.wav")
     best, best_r = 0, -1.0
-    for lag in range(-int(max_lag_s * rate), int(max_lag_s * rate) + 1):
+    lo, hi = -len(v), len(a)
+    if max_lag_s is not None:
+        lo, hi = max(lo, -int(max_lag_s * rate)), min(hi, int(max_lag_s * rate))
+    for lag in range(lo, hi + 1):
         va, aa = (v[-lag:], a) if lag < 0 else (v, a[lag:])
         n = min(len(va), len(aa))
         if n < 60 * rate:
@@ -194,7 +199,7 @@ def join_parts(sess: Session, parts: list, work: Path) -> list[dict]:
         d = sess.info.get(f.name, {}).get("duration") or probe(f)["duration"]
         bounds.append({"name": name, "file": f.name, "start_s": round(t, 2), "end_s": round(t + d, 2)})
         if v is not None:
-            cache = work / f"offset-{hashlib.sha256(f'{f.name}|{f.stat().st_size}|{v.name}|{v.stat().st_size}'.encode()).hexdigest()[:10]}.json"
+            cache = work / f"offset2-{hashlib.sha256(f'{f.name}|{f.stat().st_size}|{v.name}|{v.stat().st_size}'.encode()).hexdigest()[:10]}.json"
             if cache.exists():
                 off, match = json.loads(cache.read_text())
             else:

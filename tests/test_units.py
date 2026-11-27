@@ -834,3 +834,17 @@ def test_page_text_keeps_subscripts():
     assert "1 Machine  Q_BEP = 9,600 / 30 = 320" in text
     assert "_th" not in text and "Below the BEP no profit." in text
     assert text.replace("_", "") == page.get_text()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
+def test_part_video_found_far_into_its_audio(tmp_path):
+    """A phone that started recording minutes before the screen recording: the video's offset is
+    found however far in it lies, not only within a few minutes."""
+    from knowlib.media.session import video_offset
+
+    from .fixtures import SR, speechlike, write_wav
+    src = speechlike(900, seed=5)
+    write_wav(tmp_path / "audio.wav", 0.9 * src)
+    write_wav(tmp_path / "video.wav", 0.2 * src[600 * SR: 840 * SR])       # starts 10 min into the audio
+    off, match = video_offset(tmp_path / "audio.wav", tmp_path / "video.wav", tmp_path)
+    assert abs(off - 600) < 0.2 and match > 0.5
